@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
-import { Key, Globe } from 'lucide-react';
 
 const Login = ({ onLogin }) => {
-    const [endpoint, setEndpoint] = useState(import.meta.env.VITE_ENDPOINT_URL || '');
-    const [token, setToken] = useState(import.meta.env.VITE_TOKEN || '');
+    const [endpoint, setEndpoint] = useState('');
+    const [token, setToken] = useState('');
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -14,36 +13,42 @@ const Login = ({ onLogin }) => {
 
     return (
         <div className="login-container">
-            <div className="login-card">
-                <h2>Simla Chat Reader</h2>
+            <div className="glass-card login-card">
+                <h2 style={{ background: 'var(--accent-gradient)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: '0.5rem' }}>
+                    Simla Automa
+                </h2>
+                <p className="login-subtitle">Accede a tu panel de control</p>
+
                 <form onSubmit={handleSubmit}>
                     <div className="form-group">
-                        <label>API Endpoint</label>
-                        <div style={{ position: 'relative' }}>
-                            <input
-                                type="text"
-                                placeholder="https://your-instance.simla.com"
-                                value={endpoint}
-                                onChange={(e) => setEndpoint(e.target.value)}
-                                required
-                            />
-                            <Globe size={18} style={{ position: 'absolute', right: 10, top: 12, opacity: 0.5 }} />
-                        </div>
+                        <label htmlFor="endpoint">Endpoint URL</label>
+                        <input
+                            id="endpoint"
+                            type="text"
+                            className="form-input"
+                            value={endpoint}
+                            onChange={(e) => setEndpoint(e.target.value)}
+                            placeholder="https://api.simla.com..."
+                            required
+                        />
                     </div>
+
                     <div className="form-group">
-                        <label>Bot Token</label>
-                        <div style={{ position: 'relative' }}>
-                            <input
-                                type="password" /* Or text if they prefer visibility */
-                                placeholder="Enter your bot token"
-                                value={token}
-                                onChange={(e) => setToken(e.target.value)}
-                                required
-                            />
-                            <Key size={18} style={{ position: 'absolute', right: 10, top: 12, opacity: 0.5 }} />
-                        </div>
+                        <label htmlFor="token">API Token</label>
+                        <input
+                            id="token"
+                            type="password"
+                            className="form-input"
+                            value={token}
+                            onChange={(e) => setToken(e.target.value)}
+                            placeholder="Ingresa tu token de acceso"
+                            required
+                        />
                     </div>
-                    <button type="submit" className="btn">Connect</button>
+
+                    <button type="submit" className="btn btn-primary">
+                        Iniciar Sesión
+                    </button>
                 </form>
             </div>
         </div>

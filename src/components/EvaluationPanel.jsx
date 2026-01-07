@@ -11,11 +11,38 @@ const EvaluationPanel = ({ chats, managers, client }) => {
     const [expandedChat, setExpandedChat] = useState(null);
     const [modalChat, setModalChat] = useState(null);
 
+    // Date filters - default to today
+    const getTodayDate = () => new Date().toISOString().split('T')[0];
+    const [dateFrom, setDateFrom] = useState(getTodayDate);
+    const [dateTo, setDateTo] = useState(getTodayDate);
+
+    // Specific dialog ID for direct evaluation
+    const [specificDialogId, setSpecificDialogId] = useState('');
+
     const getChatsForManager = (managerId) => {
-        return chats.filter(chat =>
-            chat.last_dialog?.responsible?.id?.toString() === managerId &&
-            chat.last_dialog?.closed_at !== null // Solo diálogos finalizados
-        );
+        return chats.filter(chat => {
+            // Filter by manager
+            const isManager = chat.last_dialog?.responsible?.id?.toString() === managerId;
+            const isClosed = chat.last_dialog?.closed_at !== null;
+
+            if (!isManager || !isClosed) return false;
+
+            // Filter by date if specified (using dialog close date)
+            if (dateFrom || dateTo) {
+                const closedAtStr = chat.last_dialog?.closed_at;
+                if (!closedAtStr) return false;
+
+                // Convert UTC date to local date for comparison
+                const chatDate = new Date(closedAtStr);
+                // Get local date string (YYYY-MM-DD) for comparison
+                const chatLocalDate = chatDate.toLocaleDateString('en-CA'); // en-CA gives YYYY-MM-DD format
+
+                if (dateFrom && chatLocalDate < dateFrom) return false;
+                if (dateTo && chatLocalDate > dateTo) return false;
+            }
+
+            return true;
+        });
     };
 
     const selectRandomChats = (managerChats, count) => {
@@ -24,16 +51,24 @@ const EvaluationPanel = ({ chats, managers, client }) => {
     };
 
     const handleEvaluate = async () => {
+        // If specific dialog ID is provided, evaluate that directly
+        if (specificDialogId.trim()) {
+            await handleEvaluateSpecificDialog();
+            return;
+        }
+
         if (!selectedManager) {
-            alert('Por favor selecciona un gestor');
+            alert('Por favor selecciona un gestor o ingresa un ID de diálogo específico');
             return;
         }
 
         const manager = managers.find(m => m.id.toString() === selectedManager);
+
         const managerChats = getChatsForManager(selectedManager);
+        console.log('[DEBUG] Chats after date filter:', managerChats.length);
 
         if (managerChats.length === 0) {
-            alert('No hay chats para este gestor');
+            alert('No hay chats para este gestor en el rango de fechas seleccionado.');
             return;
         }
 
@@ -43,14 +78,12 @@ const EvaluationPanel = ({ chats, managers, client }) => {
         setProgress({ current: 0, total: selectedChats.length });
 
         try {
-            // Load messages for each chat
             const chatsWithMessages = [];
             for (const chat of selectedChats) {
                 const messages = await client.getMessages(chat.id, 100);
                 chatsWithMessages.push({ chat, messages: Array.isArray(messages) ? messages : [] });
             }
 
-            // Evaluate with Groq
             const evaluationResults = await evaluateMultipleChats(
                 chatsWithMessages,
                 manager.name,
@@ -61,6 +94,79 @@ const EvaluationPanel = ({ chats, managers, client }) => {
         } catch (error) {
             console.error('Evaluation error:', error);
             alert('Error al evaluar: ' + error.message);
+        } finally {
+            setIsEvaluating(false);
+        }
+    };
+
+    // Evaluate a specific dialog by ID
+    const handleEvaluateSpecificDialog = async () => {
+        const dialogId = specificDialogId.trim();
+
+        // Find the chat in loaded chats first
+        let chat = chats.find(c =>
+            c.id.toString() === dialogId ||
+            c.last_dialog?.id?.toString() === dialogId
+        );
+
+        if (!chat) {
+            // Try to fetch messages directly with the ID as chat_id
+            try {
+                setIsEvaluating(true);
+                setResults([]);
+                setProgress({ current: 0, total: 1 });
+
+                const messages = await client.getMessages(parseInt(dialogId), 100);
+
+                if (!messages || messages.length === 0) {
+                    alert('No se encontraron mensajes para el diálogo ID: ' + dialogId);
+                    setIsEvaluating(false);
+                    return;
+                }
+
+                // Create a minimal chat object
+                chat = {
+                    id: parseInt(dialogId),
+                    last_dialog: { id: parseInt(dialogId) }
+                };
+
+                const evaluationResults = await evaluateMultipleChats(
+                    [{ chat, messages: Array.isArray(messages) ? messages : [] }],
+                    'Gestor (ID Específico)',
+                    (current, total) => setProgress({ current, total })
+                );
+
+                setResults(evaluationResults);
+            } catch (error) {
+                console.error('Error evaluating specific dialog:', error);
+                alert('Error al evaluar diálogo específico: ' + error.message);
+            } finally {
+                setIsEvaluating(false);
+            }
+            return;
+        }
+
+        // Chat found in loaded chats
+        setIsEvaluating(true);
+        setResults([]);
+        setProgress({ current: 0, total: 1 });
+
+        try {
+            const messages = await client.getMessages(chat.id, 100);
+            const managerName = chat.last_dialog?.responsible?.name ||
+                chat.last_dialog?.responsible?.first_name ||
+                'Gestor';
+
+            const evaluationResults = await evaluateMultipleChats(
+                [{ chat, messages: Array.isArray(messages) ? messages : [] }],
+                managerName,
+                (current, total) => setProgress({ current, total })
+            );
+
+            setResults(evaluationResults);
+        } catch (error) {
+            console.error('Error evaluating specific dialog:', error);
+            alert('Error al evaluar diálogo específico: ' + error.message);
         } finally {
             setIsEvaluating(false);
         }
@@ -119,6 +225,28 @@ const EvaluationPanel = ({ chats, managers, client }) => {
                 </select>
 
                 <div className="sample-control">
+                    <label>Desde:</label>
+                    <input
+                        type="date"
+                        value={dateFrom}
+                        onChange={(e) => setDateFrom(e.target.value)}
+                        className="form-input"
+                        style={{ width: '140px' }}
+                    />
+                </div>
+
+                <div className="sample-control">
+                    <label>Hasta:</label>
+                    <input
+                        type="date"
+                        value={dateTo}
+                        onChange={(e) => setDateTo(e.target.value)}
+                        className="form-input"
+                        style={{ width: '140px' }}
+                    />
+                </div>
+
+                <div className="sample-control">
                     <label>Muestras:</label>
                     <input
                         type="number"
@@ -131,9 +259,21 @@ const EvaluationPanel = ({ chats, managers, client }) => {
                     />
                 </div>
 
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderLeft: '1px solid var(--glass-border)', paddingLeft: '1rem', marginLeft: '0.5rem' }}>
+                    <label style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>O ID específico:</label>
+                    <input
+                        type="text"
+                        value={specificDialogId}
+                        onChange={(e) => setSpecificDialogId(e.target.value)}
+                        placeholder="92458"
+                        className="form-input"
+                        style={{ width: '100px' }}
+                    />
+                </div>
+
                 <button
                     onClick={handleEvaluate}
-                    disabled={isEvaluating || !selectedManager}
+                    disabled={isEvaluating || (!selectedManager && !specificDialogId.trim())}
                     className="btn btn-primary"
                 >
                     {isEvaluating ? (

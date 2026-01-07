@@ -1,5 +1,9 @@
 export const createClient = (baseUrl, token) => {
-    const API_URL = `${baseUrl}/api/bot/v1`;
+    // Use relative URL in development to leverage Vite's proxy
+    // This avoids CORS issues when connecting to mg-o1.retailcrm.pro
+    const isDev = window.location.hostname === 'localhost';
+    const API_URL = isDev ? '/api/bot/v1' : `${baseUrl}/api/bot/v1`;
+
     const headers = {
         "X-Bot-Token": token,
         "Content-Type": "application/json",

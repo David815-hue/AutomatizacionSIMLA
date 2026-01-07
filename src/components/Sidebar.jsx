@@ -1,18 +1,32 @@
 import React from 'react';
 import { MessageSquare, RefreshCw, Loader } from 'lucide-react';
 
-const Sidebar = ({ chats, loading, selectedChatId, onSelectChat, onRefresh, dateFrom, dateTo, onDateChange, managers, selectedManager, onManagerChange }) => {
+const Sidebar = ({ chats, loading, selectedChatId, onSelectChat, onRefresh, dateFrom, dateTo, onDateChange, managers, selectedManager, onManagerChange, onBack }) => {
     return (
         <div className="sidebar">
             <div className="sidebar-header" style={{ flexDirection: 'column', gap: 10, alignItems: 'stretch' }}>
+                <button
+                    onClick={onBack}
+                    className="back-btn"
+                    style={{
+                        alignSelf: 'flex-start',
+                        padding: '0.25rem 0.5rem',
+                        marginBottom: '0.5rem',
+                        fontSize: '0.8rem',
+                        border: 'none',
+                        color: 'var(--text-secondary)'
+                    }}
+                >
+                    ← Menú Principal
+                </button>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <MessageSquare size={24} className="text-primary" />
+                        <MessageSquare size={24} className="text-accent" style={{ color: 'var(--primary-color)' }} />
                         <span>Chats</span>
                     </div>
                     <button
                         onClick={onRefresh}
-                        style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer' }}
+                        className="btn-icon"
                         title="Refresh Chats"
                     >
                         <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
