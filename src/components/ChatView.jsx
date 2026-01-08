@@ -1,18 +1,16 @@
 import React, { useEffect, useRef } from 'react';
-import { Loader, User, FileText, ShoppingBag, Truck, MessageSquare } from 'lucide-react';
+import { Loader, User, FileText, ShoppingBag, Truck, MessageCircle, Clock } from 'lucide-react';
 import { format } from 'date-fns';
 
 const ChatView = ({ chat, messages, loading }) => {
     const bottomRef = useRef(null);
 
-    // Auto-scroll to bottom when messages change
     useEffect(() => {
         if (bottomRef.current) {
             bottomRef.current.scrollIntoView({ behavior: 'smooth' });
         }
     }, [messages]);
 
-    // Sort messages by ID ascending (Chronological: Oldest -> Newest)
     const sortedMessages = [...messages].sort((a, b) => {
         const idA = parseInt(a.id || 0);
         const idB = parseInt(b.id || 0);
@@ -30,7 +28,7 @@ const ChatView = ({ chat, messages, loading }) => {
                             <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: 4 }}>
                                 <FileText size={16} />
                                 <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'underline' }}>
-                                    {item.caption || item.filename || 'Attachment'}
+                                    {item.caption || item.filename || 'Archivo adjunto'}
                                 </a>
                             </div>
                         ))}
@@ -40,14 +38,14 @@ const ChatView = ({ chat, messages, loading }) => {
                 return (
                     <div className="msg-product" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <ShoppingBag size={16} />
-                        <span>Product: {msg.product?.name || 'N/A'}</span>
+                        <span>Producto: {msg.product?.name || 'N/A'}</span>
                     </div>
                 );
             case 'order':
                 return (
                     <div className="msg-order" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <Truck size={16} />
-                        <span>Order #{msg.order?.number || 'N/A'}</span>
+                        <span>Pedido #{msg.order?.number || 'N/A'}</span>
                     </div>
                 );
             default:
@@ -58,9 +56,24 @@ const ChatView = ({ chat, messages, loading }) => {
     if (!chat) {
         return (
             <div className="main-content empty-state">
-                <MessageSquare size={48} style={{ opacity: 0.2, marginBottom: '1rem' }} /> // Wait, MessageSquare is not imported.
-                // Fixed below
-                <p>Select a chat to start viewing messages</p>
+                <div style={{
+                    width: 80,
+                    height: 80,
+                    borderRadius: 'var(--radius-full)',
+                    background: 'linear-gradient(135deg, rgba(78, 205, 196, 0.15), rgba(168, 85, 247, 0.15))',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: '1.5rem'
+                }}>
+                    <MessageCircle size={36} style={{ color: 'var(--text-muted)', opacity: 0.5 }} />
+                </div>
+                <h3 style={{ margin: '0 0 0.5rem 0', color: 'var(--text-secondary)' }}>
+                    Sin chat seleccionado
+                </h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                    Selecciona una conversación para ver los mensajes
+                </p>
             </div>
         );
     }
@@ -68,34 +81,70 @@ const ChatView = ({ chat, messages, loading }) => {
     return (
         <div className="main-content">
             <div className="chat-header">
-                {chat.name || `Chat #${chat.id}`}
-                <div style={{ fontSize: '0.8rem', fontWeight: 'normal', opacity: 0.7 }}>
-                    ID: {chat.id} | Platform: {chat.transport}
+                <div>
+                    <div style={{ fontWeight: 600, fontSize: '1.1rem' }}>
+                        {chat.name || `Chat #${chat.id}`}
+                    </div>
+                    <div style={{
+                        fontSize: '0.8rem',
+                        color: 'var(--text-muted)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        marginTop: '0.25rem'
+                    }}>
+                        <span style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.25rem',
+                            padding: '0.15rem 0.5rem',
+                            background: 'rgba(78, 205, 196, 0.15)',
+                            borderRadius: 'var(--radius-sm)',
+                            fontSize: '0.75rem',
+                            color: '#4ECDC4'
+                        }}>
+                            {chat.transport}
+                        </span>
+                        <span>ID: {chat.id}</span>
+                    </div>
                 </div>
             </div>
 
             <div className="messages-area">
                 {loading ? (
-                    <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
-                        <Loader className="animate-spin" />
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '3rem',
+                        gap: '1rem'
+                    }}>
+                        <div style={{
+                            width: 50,
+                            height: 50,
+                            borderRadius: 'var(--radius-full)',
+                            background: 'linear-gradient(135deg, rgba(255, 107, 107, 0.2), rgba(168, 85, 247, 0.2))',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}>
+                            <Loader className="animate-spin" size={24} style={{ color: '#FF6B6B' }} />
+                        </div>
+                        <p style={{ color: 'var(--text-secondary)' }}>Cargando mensajes...</p>
                     </div>
                 ) : sortedMessages.length === 0 ? (
-                    <div className="empty-state">No messages found in this chat.</div>
+                    <div className="empty-state">
+                        <MessageCircle size={36} style={{ opacity: 0.3, marginBottom: '1rem' }} />
+                        <p>No hay mensajes en este chat</p>
+                    </div>
                 ) : (
-                    sortedMessages.map((msg) => {
-                        const isMe = msg.scope === 'public' && msg.from?.type === 'user'; // Rough heuristic, might need adjustment based on real data
-                        // Better heuristic: if 'from' is user/manager it's SENT, if 'customer' it's RECEIVED.
-                        // But Simla API 'from' object structure varies.
-                        // Usually scope='private' is system/internal. public is visible to customer.
-                        // Let's assume right alignment for 'user' (agent) and left for 'customer'.
-
-                        // Checking msg.from.type
-                        // types: user, customer, bot, system
+                    sortedMessages.map((msg, index) => {
                         const isSent = msg.from?.type === 'user' || msg.from?.type === 'bot';
 
                         const senderName = msg.from?.first_name
                             ? `${msg.from.first_name} ${msg.from.last_name || ''}`
-                            : msg.from?.username || msg.from?.type || 'Unknown';
+                            : msg.from?.username || msg.from?.type || 'Desconocido';
 
                         let dateStr = '';
                         try {
@@ -105,12 +154,34 @@ const ChatView = ({ chat, messages, loading }) => {
                         }
 
                         return (
-                            <div key={msg.id} className={`message ${isSent ? 'sent' : 'received'}`}>
-                                <div style={{ fontWeight: 'bold', fontSize: '0.8em', marginBottom: 2 }}>{senderName}</div>
+                            <div
+                                key={msg.id}
+                                className={`message ${isSent ? 'sent' : 'received'}`}
+                                style={{
+                                    animationDelay: `${index * 0.02}s`
+                                }}
+                            >
+                                <div style={{
+                                    fontWeight: 600,
+                                    fontSize: '0.75rem',
+                                    marginBottom: '0.25rem',
+                                    opacity: 0.8,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.35rem'
+                                }}>
+                                    <User size={12} />
+                                    {senderName}
+                                </div>
                                 {renderContent(msg)}
-                                <div className="message-meta">
+                                <div className="message-meta" style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'flex-end',
+                                    gap: '0.25rem'
+                                }}>
+                                    <Clock size={10} />
                                     {dateStr}
-                                    {/* {msg.is_read ? ' • Read' : ''} */}
                                 </div>
                             </div>
                         );
@@ -121,9 +192,5 @@ const ChatView = ({ chat, messages, loading }) => {
         </div>
     );
 };
-
-// I forgot to import MessageSquare for the empty state inside the component if I use it.
-// I'll replace it with a simple text or import it.
-// I'll re-do the import.
 
 export default ChatView;
