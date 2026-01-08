@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ThemeToggle from './ThemeToggle';
 
 const Login = ({ onLogin }) => {
     const [endpoint, setEndpoint] = useState('');
@@ -13,7 +14,10 @@ const Login = ({ onLogin }) => {
 
     return (
         <div className="login-container">
-            <div className="glass-card login-card">
+            <div style={{ position: 'absolute', top: '2rem', right: '2rem' }}>
+                <ThemeToggle />
+            </div>
+            <div className="glass-card login-card animate-scale">
                 <h2 style={{ background: 'var(--accent-gradient)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: '0.5rem' }}>
                     Simla Automa
                 </h2>

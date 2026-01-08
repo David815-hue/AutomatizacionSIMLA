@@ -1,5 +1,6 @@
 import React from 'react';
 import { MessageSquare, RefreshCw, Loader } from 'lucide-react';
+import ThemeToggle from './ThemeToggle';
 
 const Sidebar = ({ chats, loading, selectedChatId, onSelectChat, onRefresh, dateFrom, dateTo, onDateChange, managers, selectedManager, onManagerChange, onBack }) => {
     return (
@@ -24,13 +25,16 @@ const Sidebar = ({ chats, loading, selectedChatId, onSelectChat, onRefresh, date
                         <MessageSquare size={24} className="text-accent" style={{ color: 'var(--primary-color)' }} />
                         <span>Chats</span>
                     </div>
-                    <button
-                        onClick={onRefresh}
-                        className="btn-icon"
-                        title="Refresh Chats"
-                    >
-                        <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button
+                            onClick={onRefresh}
+                            className="btn-icon"
+                            title="Refresh Chats"
+                        >
+                            <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+                        </button>
+                        <ThemeToggle style={{ width: '36px', height: '36px' }} />
+                    </div>
                 </div>
                 <div style={{ display: 'flex', gap: 5 }}>
                     <input

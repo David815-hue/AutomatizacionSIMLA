@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { ThemeProvider } from './context/ThemeContext';
 import Login from './components/Login';
 import Sidebar from './components/Sidebar';
 import ChatView from './components/ChatView';
@@ -170,63 +171,71 @@ function App() {
   };
 
   if (!credentials) {
-    return <Login onLogin={handleLogin} />;
+    return (
+      <ThemeProvider>
+        <Login onLogin={handleLogin} />
+      </ThemeProvider>
+    );
   }
 
   // Render Selection Screen
   if (currentView === 'selection') {
     return (
-      <div className="app-container">
-        <MainSelection onSelect={setCurrentView} />
-      </div>
+      <ThemeProvider>
+        <div className="app-container">
+          <MainSelection onSelect={setCurrentView} />
+        </div>
+      </ThemeProvider>
     );
   }
 
   // Render Chats View
   if (currentView === 'chats') {
     return (
-      <div className="app-container">
-        <Sidebar
-          chats={chats}
-          loading={loadingChats}
-          selectedChatId={selectedChat?.id}
-          onSelectChat={handleSelectChat}
-          onRefresh={loadChats}
-          dateFrom={dateFrom}
-          dateTo={dateTo}
-          onDateChange={handleDateChange}
-          managers={managers}
-          selectedManager={selectedManager}
-          onManagerChange={setSelectedManager}
-          onBack={handleBackToMenu}
-        />
-        <ChatView
-          chat={selectedChat}
-          messages={messages}
-          loading={loadingMessages}
-        />
-      </div>
+      <ThemeProvider>
+        <div className="app-container">
+          <Sidebar
+            chats={chats}
+            loading={loadingChats}
+            selectedChatId={selectedChat?.id}
+            onSelectChat={handleSelectChat}
+            onRefresh={loadChats}
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onDateChange={handleDateChange}
+            managers={managers}
+            selectedManager={selectedManager}
+            onManagerChange={setSelectedManager}
+            onBack={handleBackToMenu}
+          />
+          <ChatView
+            chat={selectedChat}
+            messages={messages}
+            loading={loadingMessages}
+          />
+        </div>
+      </ThemeProvider>
     );
   }
 
   // Render Evaluation View
   if (currentView === 'evaluation') {
     return (
-      <div className="app-container">
-        <div className="evaluation-layout" style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
-          <div className="evaluation-nav-header glass-effect" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '1rem', borderBottom: '1px solid var(--border-color)' }}>
-            <button className="back-btn" onClick={handleBackToMenu}>
-              ← Volver al Menú
-            </button>
-            <h3 style={{ margin: 0, color: 'var(--text-primary)' }}>Evaluación de Gestores</h3>
+      <ThemeProvider>
+        <div className="app-container">
+          <div className="evaluation-layout" style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
+            <div className="evaluation-nav-header glass-effect" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '1rem', borderBottom: '1px solid var(--border-color)' }}>
+              <button className="back-btn" onClick={handleBackToMenu}>
+                ← Volver al Menú
+              </button>
+              <h3 style={{ margin: 0, color: 'var(--text-primary)' }}>Evaluación de Gestores</h3>
+            </div>
+            <EvaluationPanel
+              client={client}
+            />
           </div>
-          <EvaluationPanel
-            chats={chats}
-            managers={managers}
-            client={client}
-          />
         </div>
-      </div>
+      </ThemeProvider>
     );
   }
 

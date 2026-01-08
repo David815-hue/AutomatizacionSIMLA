@@ -1,8 +1,27 @@
-import React, { useState } from 'react';
-import { BarChart3, Play, Loader, ChevronDown, ChevronUp, Eye, X } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { BarChart3, Play, Loader, ChevronDown, ChevronUp, Eye, X, RefreshCw } from 'lucide-react';
 import { evaluateMultipleChats } from '../api/groq';
+import ThemeToggle from './ThemeToggle';
 
-const EvaluationPanel = ({ chats, managers, client }) => {
+// Lista de gestores conocidos con sus emails
+const KNOWN_MANAGERS = [
+    { name: 'Garcia Carlos', email: 'callcentersap3@puntofarma.hn' },
+    { name: 'Salgado Alondra', email: 'marielllandino28@gmail.com' },
+    { name: 'Martinez Daniela', email: 'josselyndanielamartinez@gmail.com' },
+    { name: 'Maldonado Evelyn', email: 'callcentersap1@puntofarma.hn' },
+    { name: 'Ochoa Gloria', email: 'callcenter3@puntofarma.hn' },
+    { name: 'Cruz Jennifer', email: 'callcenter2@puntofarma.hn' },
+    { name: 'Lino Karen', email: 'callcenter1@puntofarma.hn' },
+    { name: 'Rivera Kesia', email: 'ccvnppf2@gmail.com' },
+    { name: 'Corea Kimberly', email: 'coreakimberly848@gmail.com' },
+    { name: 'Silva Larissa', email: 'callcenter5@puntofarma.hn' },
+    { name: 'Amador Maria Fernanda', email: 'f4987740@gmail.com' },
+    { name: 'Rivas Maria Jose', email: 'mariajoserivas50@gmail.com' },
+    { name: 'Melendez Paola', email: 'callcentersap2@puntofarma.hn' },
+    { name: 'Sanchez Yohana', email: 'callcenter6@puntofarma.hn' },
+];
+
+const EvaluationPanel = ({ client }) => {
     const [selectedManager, setSelectedManager] = useState('');
     const [sampleCount, setSampleCount] = useState(5);
     const [isEvaluating, setIsEvaluating] = useState(false);
@@ -10,6 +29,16 @@ const EvaluationPanel = ({ chats, managers, client }) => {
     const [results, setResults] = useState([]);
     const [expandedChat, setExpandedChat] = useState(null);
     const [modalChat, setModalChat] = useState(null);
+
+    // Local chats state - loaded based on date filters
+    const [localChats, setLocalChats] = useState([]);
+    // Map de email -> ID descubierto de los chats
+    const [managerIdMap, setManagerIdMap] = useState({});
+    const [isLoadingChats, setIsLoadingChats] = useState(false);
+    const [chatsLoaded, setChatsLoaded] = useState(false);
+    // Count of dialogs for selected manager
+    const [managerDialogCount, setManagerDialogCount] = useState(null);
+    const [isLoadingManagerCount, setIsLoadingManagerCount] = useState(false);
 
     // Date filters - default to today
     const getTodayDate = () => new Date().toISOString().split('T')[0];
@@ -19,30 +48,292 @@ const EvaluationPanel = ({ chats, managers, client }) => {
     // Specific dialog ID for direct evaluation
     const [specificDialogId, setSpecificDialogId] = useState('');
 
-    const getChatsForManager = (managerId) => {
-        return chats.filter(chat => {
-            // Filter by manager
-            const isManager = chat.last_dialog?.responsible?.id?.toString() === managerId;
-            const isClosed = chat.last_dialog?.closed_at !== null;
+    // Helper to check if date is in range
+    const isDateInRange = useCallback((dateStr) => {
+        if (!dateStr) return false;
+        const date = new Date(dateStr);
+        const start = dateFrom ? new Date(dateFrom) : null;
+        const end = dateTo ? new Date(dateTo) : null;
 
-            if (!isManager || !isClosed) return false;
+        if (end) end.setHours(23, 59, 59, 999);
+        if (start) start.setHours(0, 0, 0, 0);
 
-            // Filter by date if specified (using dialog close date)
-            if (dateFrom || dateTo) {
-                const closedAtStr = chat.last_dialog?.closed_at;
-                if (!closedAtStr) return false;
+        if (start && date < start) return -1;
+        if (end && date > end) return 1;
+        return 0;
+    }, [dateFrom, dateTo]);
 
-                // Convert UTC date to local date for comparison
-                const chatDate = new Date(closedAtStr);
-                // Get local date string (YYYY-MM-DD) for comparison
-                const chatLocalDate = chatDate.toLocaleDateString('en-CA'); // en-CA gives YYYY-MM-DD format
+    // Load users once to build the email -> ID map
+    const loadUsers = useCallback(async () => {
+        if (!client) return;
 
-                if (dateFrom && chatLocalDate < dateFrom) return false;
-                if (dateTo && chatLocalDate > dateTo) return false;
+        try {
+            console.log('[EvaluationPanel] Loading users...');
+            const users = await client.getUsers(100);
+
+            if (!Array.isArray(users)) {
+                console.warn('[EvaluationPanel] Users response is not an array');
+                return;
             }
 
-            return true;
-        });
+            const emailToIdMap = {};
+            users.forEach(user => {
+                // Build maps by various identifiers
+                const firstName = user.first_name?.toLowerCase() || '';
+                const lastName = user.last_name?.toLowerCase() || '';
+                const fullName = `${firstName} ${lastName}`.trim();
+                const username = user.username?.toLowerCase() || '';
+
+                // Store by ID for reverse lookup
+                emailToIdMap[`id:${user.id}`] = user;
+
+                // Store by name variations
+                if (fullName) {
+                    emailToIdMap[`name:${fullName}`] = user.id;
+                    emailToIdMap[`name:${lastName} ${firstName}`.trim()] = user.id;
+                }
+                if (username) {
+                    emailToIdMap[`username:${username}`] = user.id;
+                }
+
+                // Try to match with known managers by name
+                KNOWN_MANAGERS.forEach(km => {
+                    const kmParts = km.name.toLowerCase().split(' ');
+                    if (kmParts.some(part => fullName.includes(part) || (lastName && lastName.includes(part)))) {
+                        emailToIdMap[km.email] = user.id;
+                    }
+                });
+            });
+
+            console.log('[EvaluationPanel] Users loaded:', users.length, 'Map:', emailToIdMap);
+            setManagerIdMap(emailToIdMap);
+        } catch (error) {
+            console.error('[EvaluationPanel] Error loading users:', error);
+        }
+    }, [client]);
+
+    // Load dialogs for date range - OPTIMIZED using API filters
+    const loadDialogsForDateRange = useCallback(async () => {
+        if (!client || !dateFrom || !dateTo) return;
+
+        setIsLoadingChats(true);
+        setLocalChats([]);
+
+        try {
+            // Format dates for API (ISO format)
+            const sinceDate = new Date(dateFrom);
+            sinceDate.setHours(0, 0, 0, 0);
+            const untilDate = new Date(dateTo);
+            untilDate.setHours(23, 59, 59, 999);
+
+            console.log(`[EvaluationPanel] Loading dialogs from ${sinceDate.toISOString()} to ${untilDate.toISOString()}`);
+
+            // Paginate through all dialogs using since_id
+            const allDialogs = [];
+            let lastId = null;
+            let hasMore = true;
+            const MAX_PAGES = 50;
+            let page = 0;
+
+            while (hasMore && page < MAX_PAGES) {
+                console.log(`[EvaluationPanel] Fetching dialogs page ${page + 1}, sinceId: ${lastId || 'none'}`);
+
+                const dialogs = await client.getDialogs({
+                    since: sinceDate.toISOString(),
+                    until: untilDate.toISOString(),
+                    active: false, // Only closed dialogs
+                    limit: 100,
+                    sinceId: lastId
+                });
+
+                if (!Array.isArray(dialogs) || dialogs.length === 0) {
+                    hasMore = false;
+                    break;
+                }
+
+                allDialogs.push(...dialogs);
+
+                // Get the last dialog ID for pagination
+                const lastDialog = dialogs[dialogs.length - 1];
+                lastId = lastDialog?.id;
+
+                // If we got less than limit, there are no more pages
+                if (dialogs.length < 100) {
+                    hasMore = false;
+                }
+
+                page++;
+            }
+
+            console.log(`[EvaluationPanel] Loaded ${allDialogs.length} dialogs total (${page} pages)`);
+
+            // Convert dialogs to the chat-like format we need
+            const dialogsWithInfo = allDialogs.map(dialog => ({
+                id: dialog.chat_id,
+                dialogId: dialog.id,
+                last_dialog: {
+                    id: dialog.id,
+                    closed_at: dialog.closed_at,
+                    created_at: dialog.created_at,
+                    responsible: dialog.responsible
+                }
+            }));
+
+            setLocalChats(dialogsWithInfo);
+            setChatsLoaded(true);
+        } catch (error) {
+            console.error('[EvaluationPanel] Error loading dialogs:', error);
+            alert('Error cargando diálogos: ' + error.message);
+        } finally {
+            setIsLoadingChats(false);
+        }
+    }, [client, dateFrom, dateTo]);
+
+    // Load users on mount
+    useEffect(() => {
+        if (client) {
+            loadUsers();
+        }
+    }, [client, loadUsers]);
+
+    // Auto-load dialogs when dates change
+    useEffect(() => {
+        if (client && dateFrom && dateTo) {
+            loadDialogsForDateRange();
+        }
+    }, [client, dateFrom, dateTo, loadDialogsForDateRange]);
+
+    // Load manager dialog count when manager or dates change
+    useEffect(() => {
+        const loadManagerCount = async () => {
+            if (!selectedManager || !client || !dateFrom || !dateTo) {
+                setManagerDialogCount(null);
+                return;
+            }
+
+            const knownManager = KNOWN_MANAGERS.find(m => m.email === selectedManager);
+            if (!knownManager) return;
+
+            const managerId = managerIdMap[selectedManager.toLowerCase()]
+                || managerIdMap[`name:${knownManager.name.toLowerCase()}`];
+
+            if (!managerId) {
+                setManagerDialogCount(0);
+                return;
+            }
+
+            setIsLoadingManagerCount(true);
+            try {
+                const sinceDate = new Date(dateFrom);
+                sinceDate.setHours(0, 0, 0, 0);
+                const untilDate = new Date(dateTo);
+                untilDate.setHours(23, 59, 59, 999);
+
+                // Quick fetch to get message count
+                const messages = await client.getMessagesByUser({
+                    userId: managerId,
+                    since: sinceDate.toISOString(),
+                    until: untilDate.toISOString(),
+                    limit: 100
+                });
+
+                if (Array.isArray(messages)) {
+                    const dialogIds = new Set(messages.filter(m => m.dialog?.id).map(m => m.dialog.id));
+                    setManagerDialogCount(dialogIds.size);
+                } else {
+                    setManagerDialogCount(0);
+                }
+            } catch (error) {
+                console.error('Error loading manager count:', error);
+                setManagerDialogCount(null);
+            } finally {
+                setIsLoadingManagerCount(false);
+            }
+        };
+
+        loadManagerCount();
+    }, [selectedManager, client, dateFrom, dateTo, managerIdMap]);
+
+    // Get dialogs for a specific manager by fetching their messages
+    const getDialogsForManager = async (managerEmail) => {
+        // Find the known manager
+        const knownManager = KNOWN_MANAGERS.find(m => m.email === managerEmail);
+        if (!knownManager) return [];
+
+        // Get the ID from our map
+        const managerId = managerIdMap[managerEmail.toLowerCase()]
+            || managerIdMap[`name:${knownManager.name.toLowerCase()}`];
+
+        if (!managerId) {
+            console.log(`[getDialogsForManager] No ID found for ${knownManager.name}`);
+            return [];
+        }
+
+        console.log(`[getDialogsForManager] Looking for dialogs of ${knownManager.name} (ID: ${managerId})`);
+
+        try {
+            // Format dates
+            const sinceDate = new Date(dateFrom);
+            sinceDate.setHours(0, 0, 0, 0);
+            const untilDate = new Date(dateTo);
+            untilDate.setHours(23, 59, 59, 999);
+
+            // Get messages from this user in the date range
+            const allMessages = [];
+            let lastId = null;
+            let hasMore = true;
+            const MAX_PAGES = 20;
+            let page = 0;
+
+            while (hasMore && page < MAX_PAGES) {
+                const messages = await client.getMessagesByUser({
+                    userId: managerId,
+                    since: sinceDate.toISOString(),
+                    until: untilDate.toISOString(),
+                    limit: 100,
+                    sinceId: lastId
+                });
+
+                if (!Array.isArray(messages) || messages.length === 0) {
+                    hasMore = false;
+                    break;
+                }
+
+                allMessages.push(...messages);
+                lastId = messages[messages.length - 1]?.id;
+
+                if (messages.length < 100) {
+                    hasMore = false;
+                }
+                page++;
+            }
+
+            console.log(`[getDialogsForManager] Found ${allMessages.length} messages from this manager`);
+
+            // Extract unique dialog IDs
+            const dialogIds = new Set();
+            allMessages.forEach(msg => {
+                if (msg.dialog?.id) {
+                    dialogIds.add(msg.dialog.id);
+                }
+            });
+
+            console.log(`[getDialogsForManager] Found ${dialogIds.size} unique dialogs`);
+
+            // Convert to the format we need
+            return Array.from(dialogIds).map(dialogId => ({
+                id: null, // We don't have chat_id here, but we have dialogId
+                dialogId: dialogId,
+                last_dialog: {
+                    id: dialogId,
+                    closed_at: new Date().toISOString(), // Placeholder
+                    responsible: { id: managerId }
+                }
+            }));
+        } catch (error) {
+            console.error('[getDialogsForManager] Error:', error);
+            return [];
+        }
     };
 
     const selectRandomChats = (managerChats, count) => {
@@ -62,31 +353,43 @@ const EvaluationPanel = ({ chats, managers, client }) => {
             return;
         }
 
-        const manager = managers.find(m => m.id.toString() === selectedManager);
+        // selectedManager is now the email
+        const manager = KNOWN_MANAGERS.find(m => m.email === selectedManager);
 
-        const managerChats = getChatsForManager(selectedManager);
-        console.log('[DEBUG] Chats after date filter:', managerChats.length);
+        setIsEvaluating(true);
+        setResults([]);
+        setProgress({ current: 0, total: 0 });
 
-        if (managerChats.length === 0) {
-            alert('No hay chats para este gestor en el rango de fechas seleccionado.');
+        // Find dialogs for this manager (async)
+        console.log('[handleEvaluate] Finding dialogs for manager...');
+        const managerDialogs = await getDialogsForManager(selectedManager);
+        console.log('[handleEvaluate] Found dialogs:', managerDialogs.length);
+
+        if (managerDialogs.length === 0) {
+            alert('No hay diálogos para este gestor en el rango de fechas seleccionado.');
+            setIsEvaluating(false);
             return;
         }
 
-        const selectedChats = selectRandomChats(managerChats, sampleCount);
-        setIsEvaluating(true);
-        setResults([]);
+        const selectedChats = selectRandomChats(managerDialogs, sampleCount);
         setProgress({ current: 0, total: selectedChats.length });
 
         try {
             const chatsWithMessages = [];
             for (const chat of selectedChats) {
-                const messages = await client.getMessages(chat.id, 100);
+                // Use getMessagesByDialog if we have dialogId (more efficient)
+                let messages;
+                if (chat.dialogId) {
+                    messages = await client.getMessagesByDialog(chat.dialogId, 100);
+                } else {
+                    messages = await client.getMessages(chat.id, 100);
+                }
                 chatsWithMessages.push({ chat, messages: Array.isArray(messages) ? messages : [] });
             }
 
             const evaluationResults = await evaluateMultipleChats(
                 chatsWithMessages,
-                manager.name,
+                manager?.name || 'Gestor',
                 (current, total) => setProgress({ current, total })
             );
 
@@ -104,7 +407,7 @@ const EvaluationPanel = ({ chats, managers, client }) => {
         const dialogId = specificDialogId.trim();
 
         // Find the chat in loaded chats first
-        let chat = chats.find(c =>
+        let chat = localChats.find(c =>
             c.id.toString() === dialogId ||
             c.last_dialog?.id?.toString() === dialogId
         );
@@ -202,14 +505,17 @@ const EvaluationPanel = ({ chats, managers, client }) => {
         };
     };
 
-    const manager = managers.find(m => m.id.toString() === selectedManager);
+    const manager = KNOWN_MANAGERS.find(m => m.email === selectedManager);
     const averages = calculateAverages();
 
     return (
         <div className="evaluation-panel">
-            <div className="evaluation-header">
-                <BarChart3 size={24} />
-                <h2>Evaluación de Gestores</h2>
+            <div className="evaluation-header" style={{ justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <BarChart3 size={24} />
+                    <h2>Evaluación de Gestores</h2>
+                </div>
+                <ThemeToggle />
             </div>
 
             <div className="evaluation-controls">
@@ -219,8 +525,8 @@ const EvaluationPanel = ({ chats, managers, client }) => {
                     className="form-input"
                 >
                     <option value="">Seleccionar Gestor</option>
-                    {managers.map(m => (
-                        <option key={m.id} value={m.id}>{m.name}</option>
+                    {KNOWN_MANAGERS.map(m => (
+                        <option key={m.email} value={m.email}>{m.name}</option>
                     ))}
                 </select>
 
@@ -259,6 +565,7 @@ const EvaluationPanel = ({ chats, managers, client }) => {
                     />
                 </div>
 
+
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderLeft: '1px solid var(--glass-border)', paddingLeft: '1rem', marginLeft: '0.5rem' }}>
                     <label style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>O ID específico:</label>
                     <input
@@ -273,7 +580,7 @@ const EvaluationPanel = ({ chats, managers, client }) => {
 
                 <button
                     onClick={handleEvaluate}
-                    disabled={isEvaluating || (!selectedManager && !specificDialogId.trim())}
+                    disabled={isEvaluating || isLoadingChats || (!selectedManager && !specificDialogId.trim())}
                     className="btn btn-primary"
                 >
                     {isEvaluating ? (
@@ -287,6 +594,70 @@ const EvaluationPanel = ({ chats, managers, client }) => {
                             Evaluar
                         </>
                     )}
+                </button>
+            </div>
+
+            {/* Chat loading status */}
+            <div className="chat-status" style={{
+                padding: '0.75rem 1rem',
+                background: 'var(--card-bg)',
+                borderRadius: '8px',
+                marginBottom: '1rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                border: '1px solid var(--glass-border)'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    {isLoadingChats ? (
+                        <>
+                            <Loader className="animate-spin" size={16} style={{ color: 'var(--accent-primary)' }} />
+                            <span style={{ color: 'var(--text-secondary)' }}>Cargando chats para el rango de fechas...</span>
+                        </>
+                    ) : chatsLoaded ? (
+                        <>
+                            <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: '24px',
+                                height: '24px',
+                                borderRadius: '50%',
+                                background: localChats.length > 0 ? 'var(--success-bg)' : 'var(--warning-bg)',
+                                color: localChats.length > 0 ? 'var(--success-color)' : 'var(--warning-color)',
+                                fontSize: '0.75rem',
+                                fontWeight: 'bold'
+                            }}>
+                                {localChats.length > 0 ? '✓' : '!'}
+                            </span>
+                            <span style={{ color: 'var(--text-primary)' }}>
+                                <strong>{localChats.length}</strong> chats encontrados para el rango <strong>{dateFrom}</strong> al <strong>{dateTo}</strong>
+                            </span>
+                            {selectedManager && (
+                                <span style={{ color: 'var(--text-secondary)', marginLeft: '0.5rem' }}>
+                                    ({isLoadingManagerCount ? (
+                                        'Cargando...'
+                                    ) : managerDialogCount !== null ? (
+                                        <><strong>{managerDialogCount}</strong> diálogos de {KNOWN_MANAGERS.find(m => m.email === selectedManager)?.name}</>
+                                    ) : (
+                                        `Gestor: ${KNOWN_MANAGERS.find(m => m.email === selectedManager)?.name}`
+                                    )})
+                                </span>
+                            )}
+                        </>
+                    ) : (
+                        <span style={{ color: 'var(--text-secondary)' }}>Selecciona un rango de fechas para cargar chats</span>
+                    )}
+                </div>
+                <button
+                    onClick={loadDialogsForDateRange}
+                    disabled={isLoadingChats || !dateFrom || !dateTo}
+                    className="btn btn-secondary"
+                    style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
+                    title="Recargar chats"
+                >
+                    <RefreshCw size={14} className={isLoadingChats ? 'animate-spin' : ''} />
+                    Recargar
                 </button>
             </div>
 
@@ -415,7 +786,8 @@ const EvaluationPanel = ({ chats, managers, client }) => {
                                 .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
                                 .map((msg, idx) => {
                                     const isFromCustomer = msg.from?.type === 'customer';
-                                    const senderLabel = isFromCustomer ? 'Cliente' : (msg.from?.type === 'bot' ? 'Bot' : 'Agente');
+                                    const managerName = KNOWN_MANAGERS.find(m => m.email === selectedManager)?.name || 'Gestor';
+                                    const senderLabel = isFromCustomer ? 'Cliente' : (msg.from?.type === 'bot' ? 'Bot' : managerName);
                                     return (
                                         <div
                                             key={idx}
