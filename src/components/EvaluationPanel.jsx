@@ -206,7 +206,7 @@ const EvaluationPanel = ({ client }) => {
     // Load manager dialog count when manager or dates change
     useEffect(() => {
         const loadManagerCount = async () => {
-            if (!selectedManager || !client || !dateFrom || !dateTo) {
+            if (!selectedManager || !client || !dateFrom || !dateTo || !chatsLoaded) {
                 setManagerDialogCount(null);
                 return;
             }
@@ -229,7 +229,7 @@ const EvaluationPanel = ({ client }) => {
                 const untilDate = new Date(dateTo);
                 untilDate.setHours(23, 59, 59, 999);
 
-                // Quick fetch to get message count
+                // Get messages from this manager
                 const messages = await client.getMessagesByUser({
                     userId: managerId,
                     since: sinceDate.toISOString(),
@@ -238,8 +238,16 @@ const EvaluationPanel = ({ client }) => {
                 });
 
                 if (Array.isArray(messages)) {
-                    const dialogIds = new Set(messages.filter(m => m.dialog?.id).map(m => m.dialog.id));
-                    setManagerDialogCount(dialogIds.size);
+                    // Get dialog IDs from messages
+                    const dialogIdsFromMessages = new Set(messages.filter(m => m.dialog?.id).map(m => m.dialog.id));
+
+                    // Get dialog IDs from closed dialogs (localChats)
+                    const closedDialogIds = new Set(localChats.map(c => c.dialogId));
+
+                    // Only count dialogs that are BOTH from the manager AND closed
+                    const closedManagerDialogs = [...dialogIdsFromMessages].filter(id => closedDialogIds.has(id));
+
+                    setManagerDialogCount(closedManagerDialogs.length);
                 } else {
                     setManagerDialogCount(0);
                 }
@@ -252,7 +260,7 @@ const EvaluationPanel = ({ client }) => {
         };
 
         loadManagerCount();
-    }, [selectedManager, client, dateFrom, dateTo, managerIdMap]);
+    }, [selectedManager, client, dateFrom, dateTo, managerIdMap, chatsLoaded, localChats]);
 
     // Get dialogs for a specific manager by fetching their messages
     const getDialogsForManager = async (managerEmail) => {
@@ -310,26 +318,38 @@ const EvaluationPanel = ({ client }) => {
 
             console.log(`[getDialogsForManager] Found ${allMessages.length} messages from this manager`);
 
-            // Extract unique dialog IDs
-            const dialogIds = new Set();
+            // Extract unique dialog IDs from manager's messages
+            const dialogIdsFromMessages = new Set();
             allMessages.forEach(msg => {
                 if (msg.dialog?.id) {
-                    dialogIds.add(msg.dialog.id);
+                    dialogIdsFromMessages.add(msg.dialog.id);
                 }
             });
 
-            console.log(`[getDialogsForManager] Found ${dialogIds.size} unique dialogs`);
+            console.log(`[getDialogsForManager] Found ${dialogIdsFromMessages.size} unique dialogs from messages`);
+
+            // Get closed dialog IDs from localChats
+            const closedDialogIds = new Set(localChats.map(c => c.dialogId));
+
+            // Only include dialogs that are CLOSED
+            const closedManagerDialogIds = [...dialogIdsFromMessages].filter(id => closedDialogIds.has(id));
+
+            console.log(`[getDialogsForManager] ${closedManagerDialogIds.length} of those are closed`);
 
             // Convert to the format we need
-            return Array.from(dialogIds).map(dialogId => ({
-                id: null, // We don't have chat_id here, but we have dialogId
-                dialogId: dialogId,
-                last_dialog: {
-                    id: dialogId,
-                    closed_at: new Date().toISOString(), // Placeholder
-                    responsible: { id: managerId }
-                }
-            }));
+            return closedManagerDialogIds.map(dialogId => {
+                // Try to find the dialog in localChats to get its info
+                const localChat = localChats.find(c => c.dialogId === dialogId);
+                return {
+                    id: localChat?.id || null,
+                    dialogId: dialogId,
+                    last_dialog: localChat?.last_dialog || {
+                        id: dialogId,
+                        closed_at: new Date().toISOString(),
+                        responsible: { id: managerId }
+                    }
+                };
+            });
         } catch (error) {
             console.error('[getDialogsForManager] Error:', error);
             return [];
