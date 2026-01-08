@@ -120,11 +120,14 @@ const EvaluationPanel = ({ client }) => {
         setLocalChats([]);
 
         try {
-            // Format dates for API (ISO format)
-            const sinceDate = new Date(dateFrom);
-            sinceDate.setHours(0, 0, 0, 0);
-            const untilDate = new Date(dateTo);
-            untilDate.setHours(23, 59, 59, 999);
+            // Parse dates correctly in local timezone
+            // dateFrom and dateTo are in format "YYYY-MM-DD"
+            const [fromYear, fromMonth, fromDay] = dateFrom.split('-').map(Number);
+            const [toYear, toMonth, toDay] = dateTo.split('-').map(Number);
+
+            // Create dates in local timezone
+            const sinceDate = new Date(fromYear, fromMonth - 1, fromDay, 0, 0, 0, 0);
+            const untilDate = new Date(toYear, toMonth - 1, toDay, 23, 59, 59, 999);
 
             console.log(`[EvaluationPanel] Loading dialogs from ${sinceDate.toISOString()} to ${untilDate.toISOString()}`);
 
@@ -224,10 +227,11 @@ const EvaluationPanel = ({ client }) => {
 
             setIsLoadingManagerCount(true);
             try {
-                const sinceDate = new Date(dateFrom);
-                sinceDate.setHours(0, 0, 0, 0);
-                const untilDate = new Date(dateTo);
-                untilDate.setHours(23, 59, 59, 999);
+                // Parse dates correctly in local timezone
+                const [fromYear, fromMonth, fromDay] = dateFrom.split('-').map(Number);
+                const [toYear, toMonth, toDay] = dateTo.split('-').map(Number);
+                const sinceDate = new Date(fromYear, fromMonth - 1, fromDay, 0, 0, 0, 0);
+                const untilDate = new Date(toYear, toMonth - 1, toDay, 23, 59, 59, 999);
 
                 // Get messages from this manager
                 const messages = await client.getMessagesByUser({
@@ -280,11 +284,11 @@ const EvaluationPanel = ({ client }) => {
         console.log(`[getDialogsForManager] Looking for dialogs of ${knownManager.name} (ID: ${managerId})`);
 
         try {
-            // Format dates
-            const sinceDate = new Date(dateFrom);
-            sinceDate.setHours(0, 0, 0, 0);
-            const untilDate = new Date(dateTo);
-            untilDate.setHours(23, 59, 59, 999);
+            // Parse dates correctly in local timezone
+            const [fromYear, fromMonth, fromDay] = dateFrom.split('-').map(Number);
+            const [toYear, toMonth, toDay] = dateTo.split('-').map(Number);
+            const sinceDate = new Date(fromYear, fromMonth - 1, fromDay, 0, 0, 0, 0);
+            const untilDate = new Date(toYear, toMonth - 1, toDay, 23, 59, 59, 999);
 
             // Get messages from this user in the date range
             const allMessages = [];
@@ -492,6 +496,59 @@ const EvaluationPanel = ({ client }) => {
             alert('Error al evaluar diálogo específico: ' + error.message);
         } finally {
             setIsEvaluating(false);
+        }
+    };
+
+    // Re-evaluate a specific row with a different dialog
+    const handleReEvaluate = async (idx) => {
+        if (!selectedManager) return;
+
+        const manager = KNOWN_MANAGERS.find(m => m.email === selectedManager);
+        const currentDialogIds = results.map(r => r.dialogId);
+
+        // Get all available dialogs for this manager
+        const allDialogs = await getDialogsForManager(selectedManager);
+
+        // Filter out dialogs that are already in results
+        const availableDialogs = allDialogs.filter(d => !currentDialogIds.includes(d.dialogId));
+
+        if (availableDialogs.length === 0) {
+            alert('No hay más diálogos disponibles para este gestor.');
+            return;
+        }
+
+        // Pick a random one
+        const newDialog = availableDialogs[Math.floor(Math.random() * availableDialogs.length)];
+
+        // Update results to show loading state for this row
+        const updatedResults = [...results];
+        updatedResults[idx] = { ...updatedResults[idx], isReloading: true };
+        setResults(updatedResults);
+
+        try {
+            // Get messages for the new dialog
+            const messages = await client.getMessagesByDialog(newDialog.dialogId, 100);
+
+            // Evaluate the new dialog
+            const evaluationResults = await evaluateMultipleChats(
+                [{ chat: newDialog, messages: Array.isArray(messages) ? messages : [] }],
+                manager?.name || 'Gestor',
+                () => { } // No need to update progress for single re-evaluation
+            );
+
+            if (evaluationResults && evaluationResults.length > 0) {
+                const newResult = evaluationResults[0];
+                const finalResults = [...results];
+                finalResults[idx] = newResult;
+                setResults(finalResults);
+            }
+        } catch (error) {
+            console.error('Error re-evaluating:', error);
+            alert('Error al re-evaluar: ' + error.message);
+            // Revert loading state
+            const revertedResults = [...results];
+            revertedResults[idx] = { ...revertedResults[idx], isReloading: false };
+            setResults(revertedResults);
         }
     };
 
@@ -721,13 +778,21 @@ const EvaluationPanel = ({ client }) => {
                                                 <td>{result.evaluation.registro.total}</td>
                                                 <td className="total-cell">{result.evaluation.promedio_final}</td>
                                                 <td className="obs-cell">{result.evaluation.observaciones}</td>
-                                                <td>
+                                                <td style={{ display: 'flex', gap: '0.5rem' }}>
                                                     <button
                                                         className="btn-icon"
                                                         onClick={(e) => { e.stopPropagation(); setModalChat(result); }}
                                                         title="Ver chat"
                                                     >
                                                         <Eye size={16} />
+                                                    </button>
+                                                    <button
+                                                        className="btn-icon"
+                                                        onClick={(e) => { e.stopPropagation(); handleReEvaluate(idx); }}
+                                                        title="Reemplazar con otro diálogo"
+                                                        disabled={result.isReloading}
+                                                    >
+                                                        <RefreshCw size={16} className={result.isReloading ? 'animate-spin' : ''} />
                                                     </button>
                                                 </td>
                                             </>
