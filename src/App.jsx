@@ -37,13 +37,26 @@ function App() {
 
   /* Auto-login on mount */
   useEffect(() => {
+    // Priority 1: Environment variables
+    const envEndpoint = import.meta.env.VITE_ENDPOINT_URL;
+    const envToken = import.meta.env.VITE_TOKEN;
+
+    if (envEndpoint && envToken) {
+      const baseUrl = envEndpoint.replace(/\/$/, '');
+      setCredentials({ baseUrl, token: envToken });
+      setClient(createClient(baseUrl, envToken));
+      console.log('✅ Auto-login using environment variables');
+      return;
+    }
+
+    // Priority 2: localStorage (fallback)
     const savedEndpoint = localStorage.getItem('simla_endpoint');
     const savedToken = localStorage.getItem('simla_token');
     if (savedEndpoint && savedToken) {
-      // Directly set state to avoid stale reference issues
       const baseUrl = savedEndpoint.replace(/\/$/, '');
       setCredentials({ baseUrl, token: savedToken });
       setClient(createClient(baseUrl, savedToken));
+      console.log('✅ Auto-login using localStorage');
     }
   }, []);
 
