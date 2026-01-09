@@ -6,23 +6,24 @@ import ChatView from './components/ChatView';
 import EvaluationPanel from './components/EvaluationPanel';
 import MainSelection from './components/MainSelection';
 import { createClient } from './api/simla';
+import { useChats, useMessages, useManagers } from './hooks/useSimlaData';
 
 function App() {
   const [credentials, setCredentials] = useState(null);
   const [client, setClient] = useState(null);
-  const [chats, setChats] = useState([]);
   const [selectedChat, setSelectedChat] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [loadingChats, setLoadingChats] = useState(false);
-  const [loadingMessages, setLoadingMessages] = useState(false);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [selectedManager, setSelectedManager] = useState('');
-  const [managers, setManagers] = useState([]);
 
   // Navigation State
   // 'selection' | 'chats' | 'evaluation'
   const [currentView, setCurrentView] = useState('selection');
+
+  // React Query hooks - replaces manual state management
+  const { data: chats = [], isLoading: loadingChats, refetch: refetchChats } = useChats(client, dateFrom, dateTo);
+  const { data: messages = [], isLoading: loadingMessages, refetch: refetchMessages } = useMessages(client, selectedChat?.id);
+  const { data: managers = [] } = useManagers(client, chats);
 
   const handleLogin = (endpoint, token) => {
     // Basic validation/cleaning
@@ -60,122 +61,16 @@ function App() {
     }
   }, []);
 
-  useEffect(() => {
-    if (client) {
-      loadChats();
-    }
-  }, [client, dateFrom, dateTo]);
-
-  // Helper to parse dates simply
-  const isDateInRange = (dateStr) => {
-    if (!dateStr) return false;
-    const date = new Date(dateStr);
-    const start = dateFrom ? new Date(dateFrom) : null;
-    const end = dateTo ? new Date(dateTo) : null;
-
-    if (end) end.setHours(23, 59, 59, 999);
-    if (start) start.setHours(0, 0, 0, 0);
-
-    if (start && date < start) return -1;
-    if (end && date > end) return 1;
-    return 0;
-  };
-
-  const loadChats = async () => {
-    if (loadingChats) return;
-    setLoadingChats(true);
-    setChats([]);
-    try {
-      const chatMap = new Map();
-      const hasDateFilter = dateFrom && dateTo;
-
-      if (!hasDateFilter) {
-        const data = await client.getChats(300, 0);
-        if (Array.isArray(data)) {
-          data.forEach(chat => chatMap.set(chat.id, chat));
-        }
-      } else {
-        let offset = 0;
-        let limit = 100;
-        let stop = false;
-        const MAX_PAGES = 50;
-        let pages = 0;
-
-        while (!stop && pages < MAX_PAGES) {
-          console.log(`[loadChats] Fetching page ${pages + 1}, offset: ${offset}`);
-          const data = await client.getChats(limit, offset);
-
-          if (!Array.isArray(data) || data.length === 0) {
-            stop = true;
-            break;
-          }
-
-          let olderFound = false;
-          for (const chat of data) {
-            const dateStr = chat.last_message?.created_at || chat.created_at;
-            const comparison = isDateInRange(dateStr);
-
-            if (comparison === 0) {
-              if (!chatMap.has(chat.id)) {
-                chatMap.set(chat.id, chat);
-              }
-            } else if (comparison === -1) {
-              olderFound = true;
-            }
-          }
-
-          if (olderFound) {
-            stop = true;
-          }
-          offset += limit;
-          pages++;
-        }
-      }
-
-      const allChats = Array.from(chatMap.values());
-
-      const managerMap = new Map();
-      allChats.forEach(chat => {
-        const responsible = chat.last_dialog?.responsible;
-        if (responsible && responsible.id) {
-          managerMap.set(responsible.id, {
-            id: responsible.id,
-            name: responsible.name || responsible.first_name || `Manager ${responsible.id}`
-          });
-        }
-      });
-      const uniqueManagers = Array.from(managerMap.values())
-        .filter(m => !m.name.toLowerCase().includes('bot'));
-
-      setManagers(uniqueManagers);
-      setChats(allChats);
-    } catch (error) {
-      console.error(error);
-      alert("Failed to load chats. Check console.");
-    } finally {
-      setLoadingChats(false);
-    }
-  };
+  // React Query handles data fetching automatically via hooks above
 
   const handleDateChange = (type, value) => {
     if (type === 'from') setDateFrom(value);
     if (type === 'to') setDateTo(value);
   };
 
-  const handleSelectChat = async (chat) => {
+  const handleSelectChat = (chat) => {
     setSelectedChat(chat);
-    setLoadingMessages(true);
-    setMessages([]);
-    try {
-      const msgs = await client.getMessages(chat.id, 100);
-      if (Array.isArray(msgs)) {
-        setMessages(msgs);
-      }
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setLoadingMessages(false);
-    }
+    // useMessages hook will automatically fetch messages when selectedChat changes
   };
 
   const handleBackToMenu = () => {
@@ -212,7 +107,7 @@ function App() {
             loading={loadingChats}
             selectedChatId={selectedChat?.id}
             onSelectChat={handleSelectChat}
-            onRefresh={loadChats}
+            onRefresh={refetchChats}
             dateFrom={dateFrom}
             dateTo={dateTo}
             onDateChange={handleDateChange}

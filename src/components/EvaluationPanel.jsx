@@ -243,16 +243,17 @@ const EvaluationPanel = ({ client }) => {
                 });
 
                 if (Array.isArray(messages)) {
-                    // Get dialog IDs from messages
-                    const dialogIdsFromMessages = new Set(messages.filter(m => m.dialog?.id).map(m => m.dialog.id));
+                    // Get all unique dialog IDs where this manager participated
+                    const managerDialogIds = new Set(
+                        messages
+                            .filter(m => m.dialog?.id)
+                            .map(m => m.dialog.id)
+                    );
 
-                    // Get dialog IDs from closed dialogs (localChats)
-                    const closedDialogIds = new Set(localChats.map(c => c.dialogId));
+                    // Count ALL dialogs (both open and closed) from this manager
+                    setManagerDialogCount(managerDialogIds.size);
 
-                    // Only count dialogs that are BOTH from the manager AND closed
-                    const closedManagerDialogs = [...dialogIdsFromMessages].filter(id => closedDialogIds.has(id));
-
-                    setManagerDialogCount(closedManagerDialogs.length);
+                    console.log(`✓ ${managerDialogIds.size} diálogos de ${knownManager.name} en rango ${dateFrom} - ${dateTo}`);
                 } else {
                     setManagerDialogCount(0);
                 }
