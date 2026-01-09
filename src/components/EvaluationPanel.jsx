@@ -48,6 +48,11 @@ const EvaluationPanel = ({ client }) => {
     // Specific dialog ID for direct evaluation
     const [specificDialogId, setSpecificDialogId] = useState('');
 
+    // Multiple dialog IDs mode
+    const [multipleDialogIds, setMultipleDialogIds] = useState('');
+    const [useMultipleIds, setUseMultipleIds] = useState(false);
+    const [onlyClosedDialogs, setOnlyClosedDialogs] = useState(false);
+
     // Helper to check if date is in range
     const isDateInRange = useCallback((dateStr) => {
         if (!dateStr) return false;
@@ -369,6 +374,12 @@ const EvaluationPanel = ({ client }) => {
     };
 
     const handleEvaluate = async () => {
+        // Check if using multiple IDs mode
+        if (useMultipleIds) {
+            await handleEvaluateMultipleIds();
+            return;
+        }
+
         // If specific dialog ID is provided, evaluate that directly
         if (specificDialogId.trim()) {
             await handleEvaluateSpecificDialog();
@@ -398,7 +409,18 @@ const EvaluationPanel = ({ client }) => {
             return;
         }
 
-        const selectedChats = selectRandomChats(managerDialogs, sampleCount);
+        // Apply closed-only filter if enabled
+        const filteredDialogs = onlyClosedDialogs
+            ? managerDialogs.filter(d => d.last_dialog?.closed_at)
+            : managerDialogs;
+
+        if (filteredDialogs.length === 0) {
+            alert('No hay diálogos cerrados para este gestor en el rango de fechas seleccionado.');
+            setIsEvaluating(false);
+            return;
+        }
+
+        const selectedChats = selectRandomChats(filteredDialogs, sampleCount);
         setProgress({ current: 0, total: selectedChats.length });
 
         try {
@@ -427,6 +449,108 @@ const EvaluationPanel = ({ client }) => {
         } finally {
             setIsEvaluating(false);
         }
+    };
+
+    // Evaluate multiple dialog IDs from textarea
+    const handleEvaluateMultipleIds = async () => {
+        // Parse IDs from textarea
+        const ids = multipleDialogIds
+            .split('\n')
+            .map(id => id.trim())
+            .filter(id => id && !isNaN(id))
+            .map(id => parseInt(id));
+
+        if (ids.length === 0) {
+            alert('No se encontraron IDs válidos para evaluar');
+            return;
+        }
+
+        setIsEvaluating(true);
+        setResults([]);
+        setProgress({ current: 0, total: ids.length });
+
+        const evaluationResults = [];
+
+        for (let i = 0; i < ids.length; i++) {
+            const dialogId = ids[i];
+            setProgress({ current: i + 1, total: ids.length });
+
+            try {
+                // Fetch dialog details first
+                const dialogDetails = await client.getDialogs({ id: dialogId, limit: 1 });
+
+                if (!dialogDetails || dialogDetails.length === 0) {
+                    evaluationResults.push({
+                        chatId: dialogId,
+                        dialogId: dialogId,
+                        error: 'Diálogo no encontrado',
+                        evaluation: null
+                    });
+                    continue;
+                }
+
+                const dialog = dialogDetails[0];
+
+                // Apply closed-only filter
+                if (onlyClosedDialogs && !dialog.closed_at) {
+                    evaluationResults.push({
+                        chatId: dialogId,
+                        dialogId: dialogId,
+                        error: 'Diálogo aún abierto (usando filtro "Solo cerrados")',
+                        evaluation: null
+                    });
+                    continue;
+                }
+
+                // Fetch messages for the dialog
+                const messages = await client.getMessagesByDialog(dialogId, 100);
+
+                if (!messages || messages.length === 0) {
+                    evaluationResults.push({
+                        chatId: dialogId,
+                        dialogId: dialogId,
+                        error: 'No se encontraron mensajes',
+                        evaluation: null
+                    });
+                    continue;
+                }
+
+                // Create chat object
+                const chat = {
+                    id: dialog.chat_id || dialogId,
+                    dialogId: dialogId,
+                    tags: dialog.tags || [],
+                    last_dialog: {
+                        id: dialogId,
+                        closed_at: dialog.closed_at,
+                        responsible: dialog.responsible
+                    }
+                };
+
+                // Evaluate
+                const result = await evaluateMultipleChats(
+                    [{ chat, messages: Array.isArray(messages) ? messages : [] }],
+                    'Evaluación por ID',
+                    () => { }  // No update progress for individual items
+                );
+
+                if (result && result.length > 0) {
+                    evaluationResults.push(result[0]);
+                }
+
+            } catch (error) {
+                console.error(`Error evaluating dialog ${dialogId}:`, error);
+                evaluationResults.push({
+                    chatId: dialogId,
+                    dialogId: dialogId,
+                    error: error.message || 'Error desconocido',
+                    evaluation: null
+                });
+            }
+        }
+
+        setResults(evaluationResults);
+        setIsEvaluating(false);
     };
 
     // Evaluate a specific dialog by ID
@@ -638,68 +762,136 @@ const EvaluationPanel = ({ client }) => {
             </div>
 
             <div className="evaluation-controls">
-                <select
-                    value={selectedManager}
-                    onChange={(e) => setSelectedManager(e.target.value)}
-                    className="form-input"
-                >
-                    <option value="">Seleccionar Gestor</option>
-                    {KNOWN_MANAGERS.map(m => (
-                        <option key={m.email} value={m.email}>{m.name}</option>
-                    ))}
-                </select>
-
-                <div className="sample-control">
-                    <label>Desde:</label>
-                    <input
-                        type="date"
-                        value={dateFrom}
-                        onChange={(e) => setDateFrom(e.target.value)}
-                        className="form-input"
-                        style={{ width: '140px' }}
-                    />
+                {/* Mode Toggle */}
+                {/* Mode Toggle */}
+                <div className="mode-toggle-group">
+                    <label className="mode-label">Modo:</label>
+                    <div className="toggle-options">
+                        <label className={`toggle-option ${!useMultipleIds ? 'active' : ''}`}>
+                            <input
+                                type="radio"
+                                name="evalMode"
+                                checked={!useMultipleIds}
+                                onChange={() => setUseMultipleIds(false)}
+                            />
+                            <div className="radio-dot"></div>
+                            <span>Aleatorio</span>
+                        </label>
+                        <label className={`toggle-option ${useMultipleIds ? 'active' : ''}`}>
+                            <input
+                                type="radio"
+                                name="evalMode"
+                                checked={useMultipleIds}
+                                onChange={() => setUseMultipleIds(true)}
+                            />
+                            <div className="radio-dot"></div>
+                            <span>Lista de IDs</span>
+                        </label>
+                    </div>
                 </div>
 
-                <div className="sample-control">
-                    <label>Hasta:</label>
-                    <input
-                        type="date"
-                        value={dateTo}
-                        onChange={(e) => setDateTo(e.target.value)}
-                        className="form-input"
-                        style={{ width: '140px' }}
-                    />
-                </div>
+                {/* Conditional Controls */}
+                {!useMultipleIds ? (
+                    // Random mode
+                    <>
+                        <select
+                            value={selectedManager}
+                            onChange={(e) => setSelectedManager(e.target.value)}
+                            className="form-input"
+                        >
+                            <option value="">Seleccionar Gestor</option>
+                            {KNOWN_MANAGERS.map(m => (
+                                <option key={m.email} value={m.email}>{m.name}</option>
+                            ))}
+                        </select>
 
-                <div className="sample-control">
-                    <label>Muestras:</label>
-                    <input
-                        type="number"
-                        min="1"
-                        max="10"
-                        value={sampleCount}
-                        onChange={(e) => setSampleCount(parseInt(e.target.value) || 5)}
-                        className="form-input"
-                        style={{ width: '60px' }}
-                    />
-                </div>
+                        <div className="sample-control">
+                            <label>Desde:</label>
+                            <input
+                                type="date"
+                                value={dateFrom}
+                                onChange={(e) => setDateFrom(e.target.value)}
+                                className="form-input"
+                                style={{ width: '140px' }}
+                            />
+                        </div>
 
+                        <div className="sample-control">
+                            <label>Hasta:</label>
+                            <input
+                                type="date"
+                                value={dateTo}
+                                onChange={(e) => setDateTo(e.target.value)}
+                                className="form-input"
+                                style={{ width: '140px' }}
+                            />
+                        </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderLeft: '1px solid var(--glass-border)', paddingLeft: '1rem', marginLeft: '0.5rem' }}>
-                    <label style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>O ID específico:</label>
-                    <input
-                        type="text"
-                        value={specificDialogId}
-                        onChange={(e) => setSpecificDialogId(e.target.value)}
-                        placeholder="92458"
-                        className="form-input"
-                        style={{ width: '100px' }}
-                    />
+                        <div className="sample-control">
+                            <label>Muestras:</label>
+                            <input
+                                type="number"
+                                min="1"
+                                max="10"
+                                value={sampleCount}
+                                onChange={(e) => setSampleCount(parseInt(e.target.value) || 5)}
+                                className="form-input"
+                                style={{ width: '60px' }}
+                            />
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderLeft: '1px solid var(--glass-border)', paddingLeft: '1rem', marginLeft: '0.5rem' }}>
+                            <label style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>O ID específico:</label>
+                            <input
+                                type="text"
+                                value={specificDialogId}
+                                onChange={(e) => setSpecificDialogId(e.target.value)}
+                                placeholder="92458"
+                                className="form-input"
+                                style={{ width: '100px' }}
+                            />
+                        </div>
+                    </>
+                ) : (
+                    // List mode
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>IDs de diálogos (uno por línea):</label>
+                        <textarea
+                            value={multipleDialogIds}
+                            onChange={(e) => setMultipleDialogIds(e.target.value)}
+                            placeholder={'12312\n12342\n4534'}
+                            className="form-input"
+                            style={{
+                                width: '100%',
+                                minHeight: '100px',
+                                fontFamily: 'monospace',
+                                fontSize: '0.9rem',
+                                resize: 'vertical'
+                            }}
+                        />
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                            {multipleDialogIds.split('\n').filter(id => id.trim() && !isNaN(id.trim())).length} IDs válidos
+                        </div>
+                    </div>
+                )}
+
+                {/* Closed-only filter */}
+                {/* Closed-only filter */}
+                <div className="closed-filter-container">
+                    <span className="filter-label">Solo diálogos cerrados</span>
+                    <label className="switch">
+                        <input
+                            type="checkbox"
+                            checked={onlyClosedDialogs}
+                            onChange={(e) => setOnlyClosedDialogs(e.target.checked)}
+                        />
+                        <span className="slider round"></span>
+                    </label>
                 </div>
 
                 <button
                     onClick={handleEvaluate}
-                    disabled={isEvaluating || isLoadingChats || (!selectedManager && !specificDialogId.trim())}
+                    disabled={isEvaluating || isLoadingChats || (!useMultipleIds && !selectedManager && !specificDialogId.trim()) || (useMultipleIds && !multipleDialogIds.trim())}
                     className="btn btn-primary"
                 >
                     {isEvaluating ? (
