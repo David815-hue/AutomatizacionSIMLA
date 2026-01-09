@@ -283,18 +283,24 @@ function getScoreForCriterion(result, criterionName) {
     if (!result || !result.evaluation) return 0;
     const eval_ = result.evaluation;
 
-    // Mapeo
+    // Mapeo sincronizado con EvaluationPanel.jsx
     if (criterionName.includes('Salida de forma adecuada')) return eval_.scripts?.saludo || 0;
     if (criterionName.includes('script de despedida')) return eval_.scripts?.despedida || 0;
-    if (criterionName.includes('Personaliza')) return eval_.protocolo?.personalizacion || 0;
-    if (criterionName.includes('tiempos de espera')) return eval_.protocolo?.tiempos_espera || 0;
-    if (criterionName.includes('Excederse del tiempo')) return eval_.protocolo?.excede_tiempo || 0;
-    if (criterionName.includes('Valida y registra')) return eval_.protocolo?.validacion_datos || 0;
+
+    // Protocolo
+    if (criterionName.includes('Personaliza')) return eval_.protocolo?.personaliza || 0;
+    if (criterionName.includes('Maneja tiempos de espera')) return eval_.protocolo?.tiempos_respuesta || 0; // "Maneja tiempos..." -> tiempos_respuesta
+    if (criterionName.includes('Excederse del tiempo')) return eval_.protocolo?.tiempo_espera || 0; // "Excederse..." -> tiempo_espera (según UI label "Espera")
+    if (criterionName.includes('Valida y registra')) return eval_.protocolo?.valida_datos || 0;
     if (criterionName.includes('Toma de pedido')) return eval_.protocolo?.toma_pedido || 0;
-    if (criterionName.includes('ofrecimientos adicionales')) return eval_.protocolo?.ofrecimientos || 0;
-    if (criterionName.includes('Confirma la orden')) return eval_.protocolo?.confirmacion || 0;
-    if (criterionName.includes('Empatía')) return eval_.calidad?.empatia || 0;
-    if (criterionName.includes('Confirmó datos')) return eval_.registro?.confirmacion_datos || 0;
+    if (criterionName.includes('ofrecimientos adicionales')) return eval_.protocolo?.ofrece_adicionales || 0;
+    if (criterionName.includes('Confirma la orden')) return eval_.protocolo?.confirma_orden || 0;
+
+    // Calidad
+    if (criterionName.includes('Empatía')) return eval_.calidad?.empatia_cortesia || 0;
+
+    // Registro
+    if (criterionName.includes('Confirmó datos')) return eval_.registro?.confirma_datos || 0;
     if (criterionName.includes('etiquetas')) return eval_.registro?.etiquetas || 0;
 
     return 0;
