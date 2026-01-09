@@ -174,6 +174,7 @@ const EvaluationPanel = ({ client }) => {
             const dialogsWithInfo = allDialogs.map(dialog => ({
                 id: dialog.chat_id,
                 dialogId: dialog.id,
+                tags: dialog.tags || [], // Include tags for evaluation
                 last_dialog: {
                     id: dialog.id,
                     closed_at: dialog.closed_at,
@@ -347,6 +348,7 @@ const EvaluationPanel = ({ client }) => {
                 return {
                     id: localChat?.id || null,
                     dialogId: dialogId,
+                    tags: localChat?.tags || [], // Include tags
                     last_dialog: localChat?.last_dialog || {
                         id: dialogId,
                         closed_at: new Date().toISOString(),
@@ -451,9 +453,12 @@ const EvaluationPanel = ({ client }) => {
                     return;
                 }
 
-                // Create a minimal chat object
+                // Create a minimal chat object with tags from messages if possible, or empty
+                // Note: getMessages doesn't return dialog tags, so for manual ID we might miss them 
+                // unless we fetching dialog details separately. For now we accept empty tags.
                 chat = {
                     id: parseInt(dialogId),
+                    tags: [], // Direct message fetch doesn't have tags
                     last_dialog: { id: parseInt(dialogId) }
                 };
 
@@ -881,7 +886,36 @@ const EvaluationPanel = ({ client }) => {
                                             <div className="message-sender">
                                                 {senderLabel}
                                             </div>
-                                            <div className="message-text">{msg.content || '[media]'}</div>
+                                            <div className="message-text">
+                                                {msg.type === 'image' && msg.items ? (
+                                                    msg.items.map((item, imgIdx) => (
+                                                        <a
+                                                            key={imgIdx}
+                                                            href={item.preview_url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            style={{ display: 'block', marginTop: imgIdx > 0 ? '0.5rem' : 0 }}
+                                                        >
+                                                            <img
+                                                                src={item.preview_url}
+                                                                alt="Imagen"
+                                                                style={{
+                                                                    maxWidth: '100%',
+                                                                    maxHeight: '200px',
+                                                                    borderRadius: 'var(--radius-sm)',
+                                                                    cursor: 'pointer'
+                                                                }}
+                                                                onError={(e) => {
+                                                                    e.target.style.display = 'none';
+                                                                    e.target.parentElement.innerHTML = '<span style="color: var(--text-muted)">[Imagen no disponible]</span>';
+                                                                }}
+                                                            />
+                                                        </a>
+                                                    ))
+                                                ) : (
+                                                    msg.content || '[media]'
+                                                )}
+                                            </div>
                                             <div className="message-time">
                                                 {new Date(msg.created_at).toLocaleString()}
                                             </div>

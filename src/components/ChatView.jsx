@@ -21,6 +21,39 @@ const ChatView = ({ chat, messages, loading }) => {
         switch (msg.type) {
             case 'text':
                 return <div className="msg-text">{msg.content}</div>;
+            case 'image':
+                return (
+                    <div className="msg-image">
+                        {msg.items?.map((item, idx) => (
+                            <a
+                                key={idx}
+                                href={item.preview_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ display: 'block', marginTop: idx > 0 ? '0.5rem' : 0 }}
+                            >
+                                <img
+                                    src={item.preview_url}
+                                    alt="Imagen"
+                                    style={{
+                                        maxWidth: '100%',
+                                        maxHeight: '300px',
+                                        borderRadius: 'var(--radius-md)',
+                                        cursor: 'pointer',
+                                        transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                                        boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+                                    }}
+                                    onMouseOver={(e) => e.target.style.transform = 'scale(1.02)'}
+                                    onMouseOut={(e) => e.target.style.transform = 'scale(1)'}
+                                    onError={(e) => {
+                                        e.target.style.display = 'none';
+                                        e.target.parentElement.innerHTML = '<span style="color: var(--text-muted)">[Imagen no disponible]</span>';
+                                    }}
+                                />
+                            </a>
+                        ))}
+                    </div>
+                );
             case 'file':
                 return (
                     <div className="msg-file">
