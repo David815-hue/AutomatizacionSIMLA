@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { BarChart3, Play, Loader, ChevronDown, ChevronUp, Eye, X, RefreshCw } from 'lucide-react';
+import { BarChart3, Play, Loader, ChevronDown, ChevronUp, Eye, X, RefreshCw, Download } from 'lucide-react';
 import { evaluateMultipleChats } from '../api/groq';
+import { exportEvaluationsToExcel } from '../utils/excelExport';
 import ThemeToggle from './ThemeToggle';
 
 // Lista de gestores conocidos con sus emails
@@ -974,7 +975,24 @@ const EvaluationPanel = ({ client }) => {
 
             {results.length > 0 && (
                 <div className="evaluation-results">
-                    <h3>Reporte de Coaching - {manager?.name}</h3>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                        <h3>Reporte de Coaching - {manager?.name}</h3>
+                        <button
+                            onClick={() => exportEvaluationsToExcel(results, manager?.name || selectedManager)}
+                            className="btn"
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.5rem',
+                                background: 'var(--success-bg)',
+                                color: 'var(--success-color)',
+                                border: '1px solid var(--success-color)'
+                            }}
+                        >
+                            <Download size={16} />
+                            Exportar a Excel
+                        </button>
+                    </div>
 
                     <table className="evaluation-table">
                         <thead>
