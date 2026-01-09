@@ -1,24 +1,40 @@
 export const createClient = (baseUrl, token) => {
-    // Use relative URL in development to leverage Vite's proxy
-    // This avoids CORS issues when connecting to mg-o1.retailcrm.pro
-    const isDev = window.location.hostname === 'localhost';
-    const API_URL = isDev ? '/api/bot/v1' : `${baseUrl}/api/bot/v1`;
+    // Detect environment
+    const isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-    const headers = {
-        "X-Bot-Token": token,
-        "Content-Type": "application/json",
+    // Helper to build URL and fetch
+    const proxyFetch = async (path, params = {}) => {
+        if (isDev) {
+            // Development: Use Vite proxy
+            const queryString = new URLSearchParams(params).toString();
+            const url = `/api/bot/v1${path}${queryString ? '?' + queryString : ''}`;
+
+            return fetch(url, {
+                method: 'GET',
+                headers: {
+                    'X-Bot-Token': token,
+                    'Content-Type': 'application/json',
+                },
+            });
+        } else {
+            // Production: Use Vercel serverless proxy
+            const proxyParams = {
+                endpoint: baseUrl,
+                token: token,
+                path: path,
+                ...params
+            };
+            const queryString = new URLSearchParams(proxyParams).toString();
+
+            return fetch(`/api/simla-proxy?${queryString}`, {
+                method: 'GET',
+            });
+        }
     };
 
     const getChats = async (limit = 50, offset = 0) => {
         try {
-            const params = new URLSearchParams();
-            params.append('limit', limit);
-            params.append('offset', offset);
-
-            const response = await fetch(`${API_URL}/chats?${params.toString()}`, {
-                method: "GET",
-                headers,
-            });
+            const response = await proxyFetch('/chats', { limit, offset });
             if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`);
             return await response.json();
         } catch (error) {
@@ -29,13 +45,9 @@ export const createClient = (baseUrl, token) => {
 
     const getMessages = async (chatId, limit = 100) => {
         try {
-            const response = await fetch(`${API_URL}/messages?chat_id=${chatId}&limit=${limit}`, {
-                method: "GET",
-                headers,
-            });
+            const response = await proxyFetch('/messages', { chat_id: chatId, limit });
             if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`);
-            const data = await response.json();
-            return data;
+            return await response.json();
         } catch (error) {
             console.error("Error fetching messages:", error);
             throw error;
@@ -45,10 +57,7 @@ export const createClient = (baseUrl, token) => {
     // Get messages by dialog ID - more efficient for evaluation
     const getMessagesByDialog = async (dialogId, limit = 100) => {
         try {
-            const response = await fetch(`${API_URL}/messages?dialog_id=${dialogId}&limit=${limit}`, {
-                method: "GET",
-                headers,
-            });
+            const response = await proxyFetch('/messages', { dialog_id: dialogId, limit });
             if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`);
             return await response.json();
         } catch (error) {
@@ -60,14 +69,7 @@ export const createClient = (baseUrl, token) => {
     // Get all users (managers) - call once to get IDs
     const getUsers = async (limit = 100) => {
         try {
-            const params = new URLSearchParams();
-            params.append('limit', limit);
-            params.append('active', 'true');
-
-            const response = await fetch(`${API_URL}/users?${params.toString()}`, {
-                method: "GET",
-                headers,
-            });
+            const response = await proxyFetch('/users', { limit, active: 'true' });
             if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`);
             return await response.json();
         } catch (error) {
@@ -79,19 +81,14 @@ export const createClient = (baseUrl, token) => {
     // Get dialogs with filters - optimized for date range and user filtering
     const getDialogs = async ({ since, until, userId, active = false, limit = 100, sinceId } = {}) => {
         try {
-            const params = new URLSearchParams();
-            params.append('limit', limit);
+            const params = { limit };
+            if (since) params.since = since;
+            if (until) params.until = until;
+            if (userId) params.user_id = userId;
+            if (active !== undefined) params.active = active ? 'true' : 'false';
+            if (sinceId) params.since_id = sinceId;
 
-            if (since) params.append('since', since);
-            if (until) params.append('until', until);
-            if (userId) params.append('user_id', userId);
-            if (active !== undefined) params.append('active', active ? 'true' : 'false');
-            if (sinceId) params.append('since_id', sinceId);
-
-            const response = await fetch(`${API_URL}/dialogs?${params.toString()}`, {
-                method: "GET",
-                headers,
-            });
+            const response = await proxyFetch('/dialogs', params);
             if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`);
             return await response.json();
         } catch (error) {
@@ -103,18 +100,13 @@ export const createClient = (baseUrl, token) => {
     // Get messages filtered by user_id and date range - to find dialogs where a manager participated
     const getMessagesByUser = async ({ userId, since, until, limit = 100, sinceId } = {}) => {
         try {
-            const params = new URLSearchParams();
-            params.append('limit', limit);
+            const params = { limit };
+            if (userId) params.user_id = userId;
+            if (since) params.since = since;
+            if (until) params.until = until;
+            if (sinceId) params.since_id = sinceId;
 
-            if (userId) params.append('user_id', userId);
-            if (since) params.append('since', since);
-            if (until) params.append('until', until);
-            if (sinceId) params.append('since_id', sinceId);
-
-            const response = await fetch(`${API_URL}/messages?${params.toString()}`, {
-                method: "GET",
-                headers,
-            });
+            const response = await proxyFetch('/messages', params);
             if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`);
             return await response.json();
         } catch (error) {
