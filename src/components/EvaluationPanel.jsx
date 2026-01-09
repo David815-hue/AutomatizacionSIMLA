@@ -440,13 +440,14 @@ const EvaluationPanel = ({ client }) => {
         );
 
         if (!chat) {
-            // Try to fetch messages directly with the ID as chat_id
+            // Try to fetch messages directly with dialog_id
             try {
                 setIsEvaluating(true);
                 setResults([]);
                 setProgress({ current: 0, total: 1 });
 
-                const messages = await client.getMessages(parseInt(dialogId), 100);
+                // Use getMessagesByDialog since user provides dialog_id, not chat_id
+                const messages = await client.getMessagesByDialog(parseInt(dialogId), 100);
 
                 if (!messages || messages.length === 0) {
                     alert('No se encontraron mensajes para el diálogo ID: ' + dialogId);
@@ -454,12 +455,14 @@ const EvaluationPanel = ({ client }) => {
                     return;
                 }
 
-                // Create a minimal chat object with tags from messages if possible, or empty
-                // Note: getMessages doesn't return dialog tags, so for manual ID we might miss them 
-                // unless we fetching dialog details separately. For now we accept empty tags.
+                // Fetch the specific dialog to get tags (API may not return them due to Simla limitation)
+                const dialogDetails = await client.getDialogs({ id: parseInt(dialogId), limit: 1 });
+                const dialogTags = (dialogDetails && dialogDetails[0]) ? dialogDetails[0].tags || [] : [];
+
+                // Create a minimal chat object with tags from dialog
                 chat = {
                     id: parseInt(dialogId),
-                    tags: [], // Direct message fetch doesn't have tags
+                    tags: dialogTags,
                     last_dialog: { id: parseInt(dialogId) }
                 };
 
@@ -557,6 +560,39 @@ const EvaluationPanel = ({ client }) => {
             setResults(revertedResults);
         }
     };
+
+    // Function to edit evaluation field values manually
+    const handleEditField = (resultIndex, section, field, newValue, maxValue) => {
+        const numValue = Math.min(Math.max(0, parseInt(newValue) || 0), maxValue);
+
+        const updatedResults = [...results];
+        const result = { ...updatedResults[resultIndex] };
+        const evaluation = { ...result.evaluation };
+
+        // Update the specific field
+        evaluation[section] = { ...evaluation[section], [field]: numValue };
+
+        // Recalculate section total
+        let sectionTotal = 0;
+        Object.keys(evaluation[section]).forEach(key => {
+            if (key !== 'total') {
+                sectionTotal += evaluation[section][key] || 0;
+            }
+        });
+        evaluation[section].total = sectionTotal;
+
+        // Recalculate overall total
+        evaluation.promedio_final =
+            (evaluation.scripts?.total || 0) +
+            (evaluation.protocolo?.total || 0) +
+            (evaluation.calidad?.total || 0) +
+            (evaluation.registro?.total || 0);
+
+        result.evaluation = evaluation;
+        updatedResults[resultIndex] = result;
+        setResults(updatedResults);
+    };
+
 
     const calculateAverages = () => {
         const validResults = results.filter(r => r.evaluation && !r.error);
@@ -806,38 +842,150 @@ const EvaluationPanel = ({ client }) => {
                                     </tr>
                                     {expandedChat === idx && result.evaluation && (
                                         <tr className="detail-row">
-                                            <td colSpan="7">
+                                            <td colSpan="9">
                                                 <div className="detail-grid">
+                                                    {/* SCRIPTS */}
                                                     <div className="detail-section">
-                                                        <h5>Scripts</h5>
-                                                        <p>Saludo: {result.evaluation.scripts.saludo}/5</p>
-                                                        <p>Despedida: {result.evaluation.scripts.despedida}/5</p>
+                                                        <h5>Scripts <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>(editable)</span></h5>
+                                                        <div className="editable-field">
+                                                            <label>Saludo:</label>
+                                                            <input type="text" value={result.evaluation.scripts.saludo || 0}
+                                                                onChange={(e) => handleEditField(idx, 'scripts', 'saludo', e.target.value, 10)}
+                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
+                                                            <span>/10</span>
+                                                        </div>
+                                                        <div className="editable-field">
+                                                            <label>Despedida:</label>
+                                                            <input type="text" value={result.evaluation.scripts.despedida || 0}
+                                                                onChange={(e) => handleEditField(idx, 'scripts', 'despedida', e.target.value, 10)}
+                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
+                                                            <span>/10</span>
+                                                        </div>
+                                                        <p style={{ marginTop: '0.5rem', fontWeight: 'bold' }}>Total: {result.evaluation.scripts.total}/20</p>
                                                     </div>
+
+                                                    {/* PROTOCOLO */}
                                                     <div className="detail-section">
-                                                        <h5>Protocolo</h5>
-                                                        <p>Personaliza: {result.evaluation.protocolo.personaliza}/4</p>
-                                                        <p>Tiempos: {result.evaluation.protocolo.tiempos_respuesta}/4</p>
-                                                        <p>Espera: {result.evaluation.protocolo.tiempo_espera}/6</p>
-                                                        <p>Datos: {result.evaluation.protocolo.valida_datos}/4</p>
-                                                        <p>Pedido: {result.evaluation.protocolo.toma_pedido}/8</p>
-                                                        <p>Adicionales: {result.evaluation.protocolo.ofrece_adicionales}/7</p>
-                                                        <p>Confirma: {result.evaluation.protocolo.confirma_orden}/6</p>
-                                                        <p>Link pago: {result.evaluation.protocolo.link_pago}/6</p>
-                                                        <p>Ayuda: {result.evaluation.protocolo.ayuda_adicional}/3</p>
-                                                        <p>Silencios: {result.evaluation.protocolo.sin_silencios}/2</p>
+                                                        <h5>Protocolo <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>(editable)</span></h5>
+                                                        <div className="editable-field">
+                                                            <label>Personaliza:</label>
+                                                            <input type="text" value={result.evaluation.protocolo.personaliza || 0}
+                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'personaliza', e.target.value, 5)}
+                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
+                                                            <span>/5</span>
+                                                        </div>
+                                                        <div className="editable-field">
+                                                            <label>Tiempos:</label>
+                                                            <input type="text" value={result.evaluation.protocolo.tiempos_respuesta || 0}
+                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'tiempos_respuesta', e.target.value, 5)}
+                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
+                                                            <span>/5</span>
+                                                        </div>
+                                                        <div className="editable-field">
+                                                            <label>Espera:</label>
+                                                            <input type="text" value={result.evaluation.protocolo.tiempo_espera || 0}
+                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'tiempo_espera', e.target.value, 7)}
+                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
+                                                            <span>/7</span>
+                                                        </div>
+                                                        <div className="editable-field">
+                                                            <label>Valida datos:</label>
+                                                            <input type="text" value={result.evaluation.protocolo.valida_datos || 0}
+                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'valida_datos', e.target.value, 5)}
+                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
+                                                            <span>/5</span>
+                                                        </div>
+                                                        <div className="editable-field">
+                                                            <label>Toma pedido:</label>
+                                                            <input type="text" value={result.evaluation.protocolo.toma_pedido || 0}
+                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'toma_pedido', e.target.value, 9)}
+                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
+                                                            <span>/9</span>
+                                                        </div>
+                                                        <div className="editable-field">
+                                                            <label>Adicionales:</label>
+                                                            <input type="text" value={result.evaluation.protocolo.ofrece_adicionales || 0}
+                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'ofrece_adicionales', e.target.value, 8)}
+                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
+                                                            <span>/8</span>
+                                                        </div>
+                                                        <div className="editable-field">
+                                                            <label>Confirma orden:</label>
+                                                            <input type="text" value={result.evaluation.protocolo.confirma_orden || 0}
+                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'confirma_orden', e.target.value, 7)}
+                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
+                                                            <span>/7</span>
+                                                        </div>
+                                                        <div className="editable-field">
+                                                            <label>Link pago:</label>
+                                                            <input type="text" value={result.evaluation.protocolo.link_pago || 0}
+                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'link_pago', e.target.value, 7)}
+                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
+                                                            <span>/7</span>
+                                                        </div>
+                                                        <div className="editable-field">
+                                                            <label>Ayuda adicional:</label>
+                                                            <input type="text" value={result.evaluation.protocolo.ayuda_adicional || 0}
+                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'ayuda_adicional', e.target.value, 4)}
+                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
+                                                            <span>/4</span>
+                                                        </div>
+                                                        <div className="editable-field">
+                                                            <label>Sin silencios:</label>
+                                                            <input type="text" value={result.evaluation.protocolo.sin_silencios || 0}
+                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'sin_silencios', e.target.value, 3)}
+                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
+                                                            <span>/3</span>
+                                                        </div>
+                                                        <p style={{ marginTop: '0.5rem', fontWeight: 'bold' }}>Total: {result.evaluation.protocolo.total}/60</p>
                                                     </div>
+
+                                                    {/* CALIDAD */}
                                                     <div className="detail-section">
-                                                        <h5>Calidad</h5>
-                                                        <p>Dominio: {result.evaluation.calidad.dominio}/6</p>
-                                                        <p>Escucha: {result.evaluation.calidad.escucha}/4</p>
-                                                        <p>Muletillas: {result.evaluation.calidad.sin_muletillas}/4</p>
-                                                        <p>Empatía: {result.evaluation.calidad.empatia}/6</p>
-                                                        <p>Fluidez: {result.evaluation.calidad.fluidez}/5</p>
-                                                        <p>Redacción: {result.evaluation.calidad.redaccion}/5</p>
+                                                        <h5>Calidad <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>(editable)</span></h5>
+                                                        <div className="editable-field">
+                                                            <label>Dominio y seguridad:</label>
+                                                            <input type="text" value={result.evaluation.calidad.dominio_seguridad || 0}
+                                                                onChange={(e) => handleEditField(idx, 'calidad', 'dominio_seguridad', e.target.value, 3)}
+                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
+                                                            <span>/3</span>
+                                                        </div>
+                                                        <div className="editable-field">
+                                                            <label>Redacción clara:</label>
+                                                            <input type="text" value={result.evaluation.calidad.redaccion_clara || 0}
+                                                                onChange={(e) => handleEditField(idx, 'calidad', 'redaccion_clara', e.target.value, 3)}
+                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
+                                                            <span>/3</span>
+                                                        </div>
+                                                        <div className="editable-field">
+                                                            <label>Empatía y cortesía:</label>
+                                                            <input type="text" value={result.evaluation.calidad.empatia_cortesia || 0}
+                                                                onChange={(e) => handleEditField(idx, 'calidad', 'empatia_cortesia', e.target.value, 4)}
+                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
+                                                            <span>/4</span>
+                                                        </div>
+                                                        <p style={{ marginTop: '0.5rem', fontWeight: 'bold' }}>Total: {result.evaluation.calidad.total}/10</p>
                                                     </div>
+
+                                                    {/* REGISTRO */}
                                                     <div className="detail-section">
-                                                        <h5>Registro</h5>
-                                                        <p>Datos: {result.evaluation.registro.datos_completos}/10</p>
+                                                        <h5>Registro <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>(editable)</span></h5>
+                                                        <div className="editable-field">
+                                                            <label>Confirmó datos:</label>
+                                                            <input type="text" value={result.evaluation.registro.confirma_datos || 0}
+                                                                onChange={(e) => handleEditField(idx, 'registro', 'confirma_datos', e.target.value, 5)}
+                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
+                                                            <span>/5</span>
+                                                        </div>
+                                                        <div className="editable-field" style={{ background: 'var(--warning-bg)', padding: '0.5rem', borderRadius: '6px', marginTop: '0.5rem' }}>
+                                                            <label style={{ color: 'var(--warning-color)' }}>⚠️ Etiquetas:</label>
+                                                            <input type="text" value={result.evaluation.registro.etiquetas || 0}
+                                                                onChange={(e) => handleEditField(idx, 'registro', 'etiquetas', e.target.value, 5)}
+                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()}
+                                                                style={{ borderColor: 'var(--warning-color)' }} />
+                                                            <span>/5</span>
+                                                        </div>
+                                                        <p style={{ marginTop: '0.5rem', fontWeight: 'bold' }}>Total: {result.evaluation.registro.total}/10</p>
                                                     </div>
                                                 </div>
                                             </td>

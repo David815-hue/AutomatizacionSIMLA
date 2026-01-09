@@ -1306,3 +1306,38 @@ body.light .selection-container::before {
 .glow-violet {
   box-shadow: 0 0 30px rgba(168, 85, 247, 0.3);
 }
+
+/* =============================================
+   EDITABLE EVALUATION FIELDS
+   ============================================= */
+.editable-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.editable-field label {
+  flex: 1;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.editable-field span {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.score-input {
+  width: 50px !important;
+  padding: 0.4rem 0.5rem !important;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border-radius: var(--radius-sm) !important;
+}
+
+.score-input:focus {
+  border-color: var(--coral) !important;
+  box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.2);
+}

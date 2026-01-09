@@ -21,16 +21,18 @@ RÚBRICA DE EVALUACIÓN:
    - 2.10 Evita silencios prolongados, más de 3 minutos sin respuesta (3 pts)
 
 3. CALIDAD DE LA ATENCIÓN (Máximo 10 puntos)
-   - 3.1 Evita muletillas: mjm, ajá, ok, este, fíjese (4 pts)
-   - 3.2 Empatía, cortesía y orientación a soluciones (6 pts)
+   - 3.1 Demuestra dominio y seguridad en el producto/servicio (3 pts)
+   - 3.2 Redacción clara, sin faltas de ortografía (3 pts)
+   - 3.3 Empatía, cortesía y orientación a soluciones (4 pts)
 
 4. CUMPLIMIENTO DE REGISTRO (Máximo 10 puntos)
    - 4.1 Confirmó datos del cliente en el chat (nombre, teléfono, dirección) (5 pts)
-   - 4.2 Colocó etiquetas al diálogo (5 pts)
+   - 4.2 Colocó etiquetas al diálogo (5 pts) - SIEMPRE PONER 0, el supervisor verificará manualmente
 
 INSTRUCCIONES:
 - Evalúa SOLO lo que puedes observar en el chat
 - Si un criterio no aplica o no hay evidencia, asigna el puntaje completo
+- Para "etiquetas", SIEMPRE asigna 0 puntos (se verifica manualmente después)
 - Sé objetivo y consistente
 
 RESPONDE EN FORMATO JSON EXACTO:
@@ -54,8 +56,9 @@ RESPONDE EN FORMATO JSON EXACTO:
     "total": <0-60>
   },
   "calidad": {
-    "sin_muletillas": <0-4>,
-    "empatia": <0-6>,
+    "dominio_seguridad": <0-3>,
+    "redaccion_clara": <0-3>,
+    "empatia_cortesia": <0-4>,
     "total": <0-10>
   },
   "registro": {
