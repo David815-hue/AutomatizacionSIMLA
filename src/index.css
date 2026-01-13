@@ -1711,3 +1711,141 @@ input:checked+.slider:before {
 .recharts-tooltip-wrapper {
   z-index: 100;
 }
+
+/* =============================================
+   DATE RANGE PICKER CUSTOMIZATION
+   ============================================= */
+.rdrCalendarWrapper {
+  background: transparent !important;
+  color: var(--text-primary) !important;
+}
+
+.rdrMonthAndYearWrapper {
+  background: var(--glass-bg) !important;
+  padding: 1rem !important;
+  border-bottom: 1px solid var(--glass-border) !important;
+}
+
+.rdrMonthAndYearPickers select {
+  background: var(--input-bg) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--input-border) !important;
+  border-radius: var(--radius-sm) !important;
+  padding: 0.25rem 0.5rem !important;
+}
+
+.rdrMonthPicker,
+.rdrYearPicker {
+  margin: 0 0.5rem !important;
+}
+
+.rdrNextPrevButton {
+  background: var(--glass-bg) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: var(--radius-sm) !important;
+  transition: all var(--transition-fast) !important;
+}
+
+.rdrNextPrevButton:hover {
+  background: var(--glass-bg-hover) !important;
+  border-color: var(--coral) !important;
+}
+
+.rdrNextPrevButton i {
+  border-color: var(--text-secondary) !important;
+}
+
+.rdrNextPrevButton:hover i {
+  border-color: var(--coral) !important;
+}
+
+.rdrMonths {
+  background: var(--card-bg) !important;
+}
+
+.rdrMonth {
+  padding: 1rem !important;
+}
+
+.rdrWeekDays {
+  margin-bottom: 0.5rem !important;
+}
+
+.rdrWeekDay {
+  color: var(--text-secondary) !important;
+  font-weight: 600 !important;
+  font-size: 0.75rem !important;
+  text-transform: uppercase !important;
+}
+
+.rdrDay {
+  color: var(--text-primary) !important;
+}
+
+.rdrDayNumber span {
+  color: var(--text-primary) !important;
+}
+
+.rdrDayPassive .rdrDayNumber span {
+  color: var(--text-muted) !important;
+  opacity: 0.4 !important;
+}
+
+.rdrDayToday .rdrDayNumber span::after {
+  background: var(--coral) !important;
+}
+
+.rdrDay:not(.rdrDayPassive) .rdrInRange,
+.rdrDay:not(.rdrDayPassive) .rdrStartEdge,
+.rdrDay:not(.rdrDayPassive) .rdrEndEdge,
+.rdrDay:not(.rdrDayPassive) .rdrSelected {
+  background: var(--coral) !important;
+  color: white !important;
+}
+
+.rdrDayStartPreview,
+.rdrDayInPreview,
+.rdrDayEndPreview {
+  background: rgba(255, 107, 107, 0.2) !important;
+  border-color: var(--coral) !important;
+}
+
+.rdrDayHovered {
+  background: var(--glass-bg-hover) !important;
+}
+
+.rdrDayDisabled {
+  background-color: transparent !important;
+  opacity: 0.3 !important;
+  cursor: not-allowed !important;
+}
+
+.rdrSelected,
+.rdrInRange,
+.rdrStartEdge,
+.rdrEndEdge {
+  border-radius: var(--radius-sm) !important;
+}
+
+.rdrDefinedRangesWrapper {
+  background: var(--glass-bg) !important;
+  border-right: 1px solid var(--glass-border) !important;
+}
+
+.rdrStaticRange {
+  background: transparent !important;
+  border-bottom: 1px solid var(--border-color) !important;
+  color: var(--text-primary) !important;
+}
+
+.rdrStaticRange:hover,
+.rdrStaticRangeSelected {
+  background: var(--glass-bg-hover) !important;
+  color: var(--coral) !important;
+}
+
+.rdrInputRange {
+  background: var(--input-bg) !important;
+  border: 1px solid var(--input-border) !important;
+  color: var(--text-primary) !important;
+}

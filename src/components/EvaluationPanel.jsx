@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { BarChart3, Play, Loader, ChevronDown, ChevronUp, Eye, X, RefreshCw, Download } from 'lucide-react';
+import { BarChart3, Play, Loader, ChevronDown, ChevronUp, Eye, X, RefreshCw, Download, Calendar } from 'lucide-react';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { DateRange } from 'react-date-range';
+import 'react-date-range/dist/styles.css';
+import 'react-date-range/dist/theme/default.css';
 import { evaluateMultipleChats } from '../api/groq';
 import { exportEvaluationsToExcel } from '../utils/excelExport';
 import ThemeToggle from './ThemeToggle';
@@ -46,70 +49,56 @@ const EvaluationPanel = ({ client }) => {
     const [managerDialogCount, setManagerDialogCount] = useState(null);
     const [isLoadingManagerCount, setIsLoadingManagerCount] = useState(false);
 
-    // Date filters - default to today
-    const getTodayDate = () => new Date().toISOString().split('T')[0];
-    const [dateFrom, setDateFrom] = useState(getTodayDate);
-    const [dateTo, setDateTo] = useState(getTodayDate);
+    // Date range picker state
+    const [showCalendar, setShowCalendar] = useState(false);
+    const [dateRange, setDateRange] = useState({
+        startDate: new Date(),
+        endDate: new Date(),
+        key: 'selection'
+    });
 
-    // Handler for date changes with 3-day limit
-    const handleDateChange = (type, value) => {
-        if (!value) return;
+    // Handle date range changes with 3-day limit
+    const handleDateRangeChange = (ranges) => {
+        const { startDate, endDate } = ranges.selection;
 
-        const newDate = new Date(value);
-        let validFrom = dateFrom;
-        let validTo = dateTo;
+        // Calculate difference in days
+        const diffTime = Math.abs(endDate - startDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-        if (type === 'from') {
-            validFrom = value;
-            // Check if range > 3 days
-            const currentTo = new Date(dateTo);
-            const diffTime = Math.abs(currentTo - newDate);
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        // If more than 2 days difference (3 days inclusive), adjust end date
+        if (diffDays > 2) {
+            const maxEndDate = new Date(startDate);
+            maxEndDate.setDate(startDate.getDate() + 2);
 
-            // Allow if valid range (<= 2 days difference means 3 days inclusive: 0, 1, 2)
-            // Or strictly 3 days span? User said "limite a escoger de dias sean 3", usually implies range size.
-            // Let's assume inclusive range. Jan 1 to Jan 3 is 3 days. Diff is 2 days.
-            // If newFrom is Jan 1 and To is Jan 10 -> Force To to Jan 3.
-
-            if (newDate > currentTo) {
-                // If start is after end, move end to start
-                validTo = value;
-            } else if (diffDays > 2) {
-                // Determine max end date (start + 2 days)
-                const maxTo = new Date(newDate);
-                maxTo.setDate(maxTo.getDate() + 2);
-                validTo = maxTo.toISOString().split('T')[0];
-            }
+            setDateRange({
+                startDate,
+                endDate: maxEndDate,
+                key: 'selection'
+            });
         } else {
-            validTo = value;
-            const currentFrom = new Date(dateFrom);
-
-            if (newDate < currentFrom) {
-                // If end is before start, move start to end
-                validFrom = value;
-            } else {
-                const diffTime = Math.abs(newDate - currentFrom);
-                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-                if (diffDays > 2) {
-                    // Determine min start date (end - 2 days)
-                    const minFrom = new Date(newDate);
-                    minFrom.setDate(minFrom.getDate() - 2);
-                    validFrom = minFrom.toISOString().split('T')[0];
-                }
-            }
+            setDateRange(ranges.selection);
         }
-
-        setDateFrom(validFrom);
-        setDateTo(validTo);
     };
+
+    // Format date to YYYY-MM-DD
+    const formatDate = (date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
+    // Derived values for backward compatibility
+    const dateFrom = formatDate(dateRange.startDate);
+    const dateTo = formatDate(dateRange.endDate);
 
     // Specific dialog ID for direct evaluation
     const [specificDialogId, setSpecificDialogId] = useState('');
 
     // Multiple dialog IDs mode
     const [multipleDialogIds, setMultipleDialogIds] = useState('');
-    const [useMultipleIds, setUseMultipleIds] = useState(false);
+    const [useMultipleIds, setUseMultipleIds] = useState(true);
+    const [managerNameForList, setManagerNameForList] = useState('');
     const [onlyClosedDialogs, setOnlyClosedDialogs] = useState(false);
 
     // Helper to check if date is in range
@@ -208,7 +197,8 @@ const EvaluationPanel = ({ client }) => {
             const allDialogs = [];
             let offset = 0;
             let hasMore = true;
-            const MAX_PAGES = 50;
+            // INCREASED LIMIT: 50 -> 500 to handle high volume of bot chats (up to 50k dialogs)
+            const MAX_PAGES = 500;
             let page = 0;
 
             while (hasMore && page < MAX_PAGES) {
@@ -289,7 +279,7 @@ const EvaluationPanel = ({ client }) => {
 
             // Check for race condition
             if (currentFetchId !== fetchIdRef.current) {
-                console.log('[EvaluationPanel] Creating outdated result, ignoring');
+                // Silently ignore outdated results to avoid user confusion
                 return;
             }
 
@@ -561,7 +551,7 @@ const EvaluationPanel = ({ client }) => {
                 // Evaluate
                 const result = await evaluateMultipleChats(
                     [{ chat, messages: Array.isArray(messages) ? messages : [] }],
-                    'Evaluación por ID',
+                    managerNameForList || 'Evaluación por ID',
                     () => { }  // No update progress for individual items
                 );
 
@@ -836,26 +826,58 @@ const EvaluationPanel = ({ client }) => {
                             ))}
                         </select>
 
-                        <div className="sample-control">
-                            <label>Desde:</label>
-                            <input
-                                type="date"
-                                value={dateFrom}
-                                onChange={(e) => handleDateChange('from', e.target.value)}
-                                className="form-input"
-                                style={{ width: '140px' }}
-                            />
-                        </div>
+                        {/* Date Range Picker */}
+                        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                            <button
+                                type="button"
+                                onClick={() => setShowCalendar(!showCalendar)}
+                                className="btn btn-secondary"
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    padding: '0.5rem 1rem'
+                                }}
+                            >
+                                <Calendar size={16} />
+                                <span>{dateFrom === dateTo ? dateFrom : `${dateFrom} - ${dateTo}`}</span>
+                                {showCalendar ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                            </button>
 
-                        <div className="sample-control">
-                            <label>Hasta:</label>
-                            <input
-                                type="date"
-                                value={dateTo}
-                                onChange={(e) => handleDateChange('to', e.target.value)}
-                                className="form-input"
-                                style={{ width: '140px' }}
-                            />
+                            {showCalendar && (
+                                <div style={{
+                                    position: 'absolute',
+                                    top: '100%',
+                                    left: 0,
+                                    zIndex: 1000,
+                                    marginTop: '0.5rem',
+                                    boxShadow: '0 10px 40px rgba(0, 0, 0, 0.3)',
+                                    borderRadius: '12px',
+                                    overflow: 'hidden',
+                                    border: '1px solid var(--glass-border)',
+                                    background: 'var(--card-bg)'
+                                }}>
+                                    <DateRange
+                                        ranges={[dateRange]}
+                                        onChange={handleDateRangeChange}
+                                        maxDate={new Date()}
+                                        moveRangeOnFirstSelection={false}
+                                        months={1}
+                                        direction="horizontal"
+                                        rangeColors={['#4ECDC4']}
+                                    />
+                                    <div style={{
+                                        padding: '0.75rem',
+                                        background: 'var(--card-bg)',
+                                        borderTop: '1px solid var(--glass-border)',
+                                        fontSize: '0.75rem',
+                                        color: 'var(--text-secondary)',
+                                        textAlign: 'center'
+                                    }}>
+                                        Máximo 3 días de rango
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <div className="sample-control">
@@ -1005,23 +1027,40 @@ const EvaluationPanel = ({ client }) => {
 
             {results.length > 0 && (
                 <div className="evaluation-results">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-                        <h3>Reporte de Coaching - {manager?.name}</h3>
-                        <button
-                            onClick={() => exportEvaluationsToExcel(results, manager?.name || selectedManager)}
-                            className="btn"
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.5rem',
-                                background: 'var(--success-bg)',
-                                color: 'var(--success-color)',
-                                border: '1px solid var(--success-color)'
-                            }}
-                        >
-                            <Download size={16} />
-                            Exportar a Excel
-                        </button>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '1rem' }}>
+                        <h3>Reporte de Coaching - {managerNameForList || manager?.name || 'Evaluación'}</h3>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                            {useMultipleIds && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <label style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)' }}>
+                                        Nombre del gestor:
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={managerNameForList}
+                                        onChange={(e) => setManagerNameForList(e.target.value)}
+                                        placeholder="Ej: Corea Kimberly"
+                                        className="form-input"
+                                        style={{ width: '200px', padding: '0.5rem 0.75rem' }}
+                                    />
+                                </div>
+                            )}
+                            <button
+                                onClick={() => exportEvaluationsToExcel(results, managerNameForList || manager?.name || selectedManager || 'Evaluación')}
+                                className="btn"
+                                style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    background: 'var(--success-bg)',
+                                    color: 'var(--success-color)',
+                                    border: '1px solid var(--success-color)'
+                                }}
+                            >
+                                <Download size={16} />
+                                Exportar a Excel
+                            </button>
+                        </div>
                     </div>
 
                     {/* VISUALIZACIÓN: Radar Charts */}
