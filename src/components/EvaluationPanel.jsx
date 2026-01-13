@@ -1033,23 +1033,27 @@ const EvaluationPanel = ({ client }) => {
                                 <RadarChart data={[
                                     {
                                         category: 'Scripts',
-                                        value: averages?.scripts || 0,
-                                        fullMark: 20
+                                        percentage: ((averages?.scripts || 0) / 20) * 100,
+                                        actual: averages?.scripts || 0,
+                                        fullMark: 100
                                     },
                                     {
                                         category: 'Protocolo',
-                                        value: averages?.protocolo || 0,
-                                        fullMark: 60
+                                        percentage: ((averages?.protocolo || 0) / 60) * 100,
+                                        actual: averages?.protocolo || 0,
+                                        fullMark: 100
                                     },
                                     {
                                         category: 'Calidad',
-                                        value: averages?.calidad || 0,
-                                        fullMark: 10
+                                        percentage: ((averages?.calidad || 0) / 10) * 100,
+                                        actual: averages?.calidad || 0,
+                                        fullMark: 100
                                     },
                                     {
                                         category: 'Registro',
-                                        value: averages?.registro || 0,
-                                        fullMark: 10
+                                        percentage: ((averages?.registro || 0) / 10) * 100,
+                                        actual: averages?.registro || 0,
+                                        fullMark: 100
                                     }
                                 ]}>
                                     <PolarGrid stroke="var(--border-color)" />
@@ -1063,8 +1067,8 @@ const EvaluationPanel = ({ client }) => {
                                         tick={{ fill: 'var(--text-muted)' }}
                                     />
                                     <Radar
-                                        name="Puntaje Promedio"
-                                        dataKey="value"
+                                        name="Desempeño (%)"
+                                        dataKey="percentage"
                                         stroke="#4F46E5"
                                         fill="#4F46E5"
                                         fillOpacity={0.6}
@@ -1076,9 +1080,10 @@ const EvaluationPanel = ({ client }) => {
                                             borderRadius: '8px'
                                         }}
                                         formatter={(value, name, props) => {
-                                            const numValue = parseFloat(value) || 0;
+                                            const percentage = parseFloat(value) || 0;
+                                            const actual = parseFloat((props && props.payload && props.payload.actual) || 0);
                                             return [
-                                                `${numValue.toFixed(1)} / ${props.payload.fullMark}`,
+                                                `${percentage.toFixed(1)}% (${actual.toFixed(1)} pts)`,
                                                 name
                                             ];
                                         }}
@@ -1096,23 +1101,23 @@ const EvaluationPanel = ({ client }) => {
                                     const radarData = [
                                         {
                                             category: 'Scripts',
-                                            value: result.evaluation.scripts.total,
-                                            fullMark: 20
+                                            percentage: (result.evaluation.scripts.total / 20) * 100,
+                                            fullMark: 100
                                         },
                                         {
                                             category: 'Proto',
-                                            value: result.evaluation.protocolo.total,
-                                            fullMark: 60
+                                            percentage: (result.evaluation.protocolo.total / 60) * 100,
+                                            fullMark: 100
                                         },
                                         {
                                             category: 'Cal',
-                                            value: result.evaluation.calidad.total,
-                                            fullMark: 10
+                                            percentage: (result.evaluation.calidad.total / 10) * 100,
+                                            fullMark: 100
                                         },
                                         {
                                             category: 'Reg',
-                                            value: result.evaluation.registro.total,
-                                            fullMark: 10
+                                            percentage: (result.evaluation.registro.total / 10) * 100,
+                                            fullMark: 100
                                         }
                                     ];
 
@@ -1130,7 +1135,7 @@ const EvaluationPanel = ({ client }) => {
                                                         tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
                                                     />
                                                     <Radar
-                                                        dataKey="value"
+                                                        dataKey="percentage"
                                                         stroke="#10B981"
                                                         fill="#10B981"
                                                         fillOpacity={0.5}
