@@ -1623,3 +1623,91 @@ input:checked+.slider:before {
     opacity: 1;
   }
 }
+
+/* ===== RADAR CHARTS ===== */
+.charts-section {
+  margin: 2rem 0;
+  padding: 1.5rem;
+  background: var(--bg-primary);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+}
+
+.average-radar-container {
+  margin-bottom: 3rem;
+  text-align: center;
+}
+
+.average-radar-container h4 {
+  margin-bottom: 1rem;
+  color: var(--text-primary);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.mini-radars-section h4 {
+  margin-bottom: 1.5rem;
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.mini-radars-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.mini-radar-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  transition: all var(--transition-normal);
+  cursor: pointer;
+}
+
+.mini-radar-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  border-color: var(--accent-primary);
+}
+
+.mini-radar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.mini-radar-label {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.mini-radar-total {
+  font-weight: 800;
+  font-size: 1.1rem;
+  color: var(--accent-primary);
+  background: var(--accent-bg);
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius-sm);
+}
+
+/* Responsive: En móviles, 1 columna */
+@media (max-width: 768px) {
+  .mini-radars-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .average-radar-container {
+    padding: 0;
+  }
+}
+
+/* Recharts custom tooltip */
+.recharts-tooltip-wrapper {
+  z-index: 100;
+}

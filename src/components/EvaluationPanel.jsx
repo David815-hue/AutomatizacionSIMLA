@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { BarChart3, Play, Loader, ChevronDown, ChevronUp, Eye, X, RefreshCw, Download } from 'lucide-react';
+import { RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { evaluateMultipleChats } from '../api/groq';
 import { exportEvaluationsToExcel } from '../utils/excelExport';
 import ThemeToggle from './ThemeToggle';
@@ -31,6 +32,10 @@ const EvaluationPanel = ({ client }) => {
     const [expandedChat, setExpandedChat] = useState(null);
     const [modalChat, setModalChat] = useState(null);
 
+    // Ref to track fetch requests and avoid race conditions
+    const fetchIdRef = useRef(0);
+    const managerFetchIdRef = useRef(0);
+
     // Local chats state - loaded based on date filters
     const [localChats, setLocalChats] = useState([]);
     // Map de email -> ID descubierto de los chats
@@ -45,6 +50,59 @@ const EvaluationPanel = ({ client }) => {
     const getTodayDate = () => new Date().toISOString().split('T')[0];
     const [dateFrom, setDateFrom] = useState(getTodayDate);
     const [dateTo, setDateTo] = useState(getTodayDate);
+
+    // Handler for date changes with 3-day limit
+    const handleDateChange = (type, value) => {
+        if (!value) return;
+
+        const newDate = new Date(value);
+        let validFrom = dateFrom;
+        let validTo = dateTo;
+
+        if (type === 'from') {
+            validFrom = value;
+            // Check if range > 3 days
+            const currentTo = new Date(dateTo);
+            const diffTime = Math.abs(currentTo - newDate);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+            // Allow if valid range (<= 2 days difference means 3 days inclusive: 0, 1, 2)
+            // Or strictly 3 days span? User said "limite a escoger de dias sean 3", usually implies range size.
+            // Let's assume inclusive range. Jan 1 to Jan 3 is 3 days. Diff is 2 days.
+            // If newFrom is Jan 1 and To is Jan 10 -> Force To to Jan 3.
+
+            if (newDate > currentTo) {
+                // If start is after end, move end to start
+                validTo = value;
+            } else if (diffDays > 2) {
+                // Determine max end date (start + 2 days)
+                const maxTo = new Date(newDate);
+                maxTo.setDate(maxTo.getDate() + 2);
+                validTo = maxTo.toISOString().split('T')[0];
+            }
+        } else {
+            validTo = value;
+            const currentFrom = new Date(dateFrom);
+
+            if (newDate < currentFrom) {
+                // If end is before start, move start to end
+                validFrom = value;
+            } else {
+                const diffTime = Math.abs(newDate - currentFrom);
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                if (diffDays > 2) {
+                    // Determine min start date (end - 2 days)
+                    const minFrom = new Date(newDate);
+                    minFrom.setDate(minFrom.getDate() - 2);
+                    validFrom = minFrom.toISOString().split('T')[0];
+                }
+            }
+        }
+
+        setDateFrom(validFrom);
+        setDateTo(validTo);
+    };
 
     // Specific dialog ID for direct evaluation
     const [specificDialogId, setSpecificDialogId] = useState('');
@@ -125,6 +183,10 @@ const EvaluationPanel = ({ client }) => {
         setIsLoadingChats(true);
         setLocalChats([]);
 
+        setLocalChats([]);
+        setChatsLoaded(false);
+        setManagerDialogCount(null);
+
         try {
             // Parse dates correctly in local timezone
             // dateFrom and dateTo are in format "YYYY-MM-DD"
@@ -137,22 +199,27 @@ const EvaluationPanel = ({ client }) => {
 
             console.log(`[EvaluationPanel] Loading dialogs from ${sinceDate.toISOString()} to ${untilDate.toISOString()}`);
 
-            // Paginate through all dialogs using since_id
+            console.log(`[EvaluationPanel] Loading dialogs from ${sinceDate.toISOString()} to ${untilDate.toISOString()}`);
+
+            // Increment fetch ID for this new request
+            const currentFetchId = ++fetchIdRef.current;
+
+            // Paginate through all dialogs using offset
             const allDialogs = [];
-            let lastId = null;
+            let offset = 0;
             let hasMore = true;
             const MAX_PAGES = 50;
             let page = 0;
 
             while (hasMore && page < MAX_PAGES) {
-                console.log(`[EvaluationPanel] Fetching dialogs page ${page + 1}, sinceId: ${lastId || 'none'}`);
+                console.log(`[EvaluationPanel] Fetching dialogs page ${page + 1}, offset: ${offset}`);
 
                 const dialogs = await client.getDialogs({
                     since: sinceDate.toISOString(),
                     until: untilDate.toISOString(),
                     active: false, // Only closed dialogs
                     limit: 100,
-                    sinceId: lastId
+                    offset: offset
                 });
 
                 if (!Array.isArray(dialogs) || dialogs.length === 0) {
@@ -162,19 +229,49 @@ const EvaluationPanel = ({ client }) => {
 
                 allDialogs.push(...dialogs);
 
-                // Get the last dialog ID for pagination
-                const lastDialog = dialogs[dialogs.length - 1];
-                lastId = lastDialog?.id;
-
                 // If we got less than limit, there are no more pages
                 if (dialogs.length < 100) {
                     hasMore = false;
                 }
 
+                offset += 100;
                 page++;
             }
 
             console.log(`[EvaluationPanel] Loaded ${allDialogs.length} dialogs total (${page} pages)`);
+
+            // Analyze Responsible distribution
+            const responsibleCounts = {};
+            let unassignedCount = 0;
+            allDialogs.forEach(d => {
+                if (!d.responsible) {
+                    unassignedCount++;
+                } else {
+                    let name = 'Unknown';
+
+                    if (d.responsible.type === 'bot') {
+                        name = 'Bot (' + d.responsible.id + ')';
+                    } else if (managerIdMap[`id:${d.responsible.id}`]) {
+                        const user = managerIdMap[`id:${d.responsible.id}`];
+                        const userName = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.username || 'User';
+                        name = `${userName} (ID: ${d.responsible.id})`;
+                    } else {
+                        name = `Unknown ID:${d.responsible.id} (${d.responsible.type})`;
+                    }
+
+                    responsibleCounts[name] = (responsibleCounts[name] || 0) + 1;
+                }
+            });
+
+            // LOGGING DEBUG: Print the first 3 responsible objects to see structure
+            if (allDialogs.length > 0) {
+                console.log('[EvaluationPanel] Sample Responsible Objects:',
+                    allDialogs.slice(0, 3).map(d => d.responsible)
+                );
+            }
+
+            console.log('[EvaluationPanel] Distribution by Responsible:', responsibleCounts);
+            console.log(`[EvaluationPanel] Unassigned chats: ${unassignedCount}`);
 
             // Convert dialogs to the chat-like format we need
             const dialogsWithInfo = allDialogs.map(dialog => ({
@@ -188,6 +285,13 @@ const EvaluationPanel = ({ client }) => {
                     responsible: dialog.responsible
                 }
             }));
+
+
+            // Check for race condition
+            if (currentFetchId !== fetchIdRef.current) {
+                console.log('[EvaluationPanel] Creating outdated result, ignoring');
+                return;
+            }
 
             setLocalChats(dialogsWithInfo);
             setChatsLoaded(true);
@@ -225,56 +329,49 @@ const EvaluationPanel = ({ client }) => {
             if (!knownManager) return;
 
             const managerId = managerIdMap[selectedManager.toLowerCase()]
-                || managerIdMap[`name:${knownManager.name.toLowerCase()}`];
-
             if (!managerId) {
+                console.warn(`[EvaluationPanel] No ID found for manager: ${selectedManager}`);
                 setManagerDialogCount(0);
                 return;
             }
 
-            setIsLoadingManagerCount(true);
-            try {
-                // Parse dates correctly in local timezone
-                const [fromYear, fromMonth, fromDay] = dateFrom.split('-').map(Number);
-                const [toYear, toMonth, toDay] = dateTo.split('-').map(Number);
-                const sinceDate = new Date(fromYear, fromMonth - 1, fromDay, 0, 0, 0, 0);
-                const untilDate = new Date(toYear, toMonth - 1, toDay, 23, 59, 59, 999);
+            // OPTIMIZATION: Filter from already loaded localChats instead of re-fetching
+            // This ensures the count matches exactly what is shown in the global log
+            if (localChats.length > 0) {
+                const managerChats = localChats.filter(chat =>
+                    chat.last_dialog?.responsible?.id === managerId
+                );
 
-                // Get messages from this manager
-                const messages = await client.getMessagesByUser({
-                    userId: managerId,
-                    since: sinceDate.toISOString(),
-                    until: untilDate.toISOString(),
-                    limit: 100
-                });
+                setManagerDialogCount(managerChats.length);
+                console.log(`✓ ${managerChats.length} diálogos de ${knownManager.name} (ID: ${managerId}) encontrados en memoria`);
 
-                if (Array.isArray(messages)) {
-                    // Get all unique dialog IDs where this manager participated
-                    const managerDialogIds = new Set(
-                        messages
-                            .filter(m => m.dialog?.id)
-                            .map(m => m.dialog.id)
-                    );
+                // If count is 0 but we have local chats using a different ID for this user, try to find it
+                // Logic: Look for name match in localChats if ID match fails
+                if (managerChats.length === 0) {
+                    const nameMatch = localChats.filter(chat => {
+                        const resp = chat.last_dialog?.responsible;
+                        if (!resp) return false;
+                        // Check email or name match
+                        if (resp.email === knownManager.email) return true;
+                        // Check name
+                        const respName = (resp.name || '').toLowerCase();
+                        return respName.includes(knownManager.name.toLowerCase().split(' ')[0].toLowerCase());
+                    });
 
-                    // Count ALL dialogs (both open and closed) from this manager
-                    setManagerDialogCount(managerDialogIds.size);
-
-                    console.log(`✓ ${managerDialogIds.size} diálogos de ${knownManager.name} en rango ${dateFrom} - ${dateTo}`);
-                } else {
-                    setManagerDialogCount(0);
+                    if (nameMatch.length > 0) {
+                        console.warn(`[EvaluationPanel] Found ${nameMatch.length} chats by name match, but ID mismatch. Using name match.`);
+                        setManagerDialogCount(nameMatch.length);
+                    }
                 }
-            } catch (error) {
-                console.error('Error loading manager count:', error);
-                setManagerDialogCount(null);
-            } finally {
-                setIsLoadingManagerCount(false);
+            } else {
+                setManagerDialogCount(0);
             }
         };
 
         loadManagerCount();
     }, [selectedManager, client, dateFrom, dateTo, managerIdMap, chatsLoaded, localChats]);
 
-    // Get dialogs for a specific manager by fetching their messages
+    // Get dialogs for a specific manager from local memory (consistent with counts)
     const getDialogsForManager = async (managerEmail) => {
         // Find the known manager
         const knownManager = KNOWN_MANAGERS.find(m => m.email === managerEmail);
@@ -289,85 +386,18 @@ const EvaluationPanel = ({ client }) => {
             return [];
         }
 
-        console.log(`[getDialogsForManager] Looking for dialogs of ${knownManager.name} (ID: ${managerId})`);
+        console.log(`[getDialogsForManager] Getting dialogs for ${knownManager.name} (ID: ${managerId}) from localChats`);
 
-        try {
-            // Parse dates correctly in local timezone
-            const [fromYear, fromMonth, fromDay] = dateFrom.split('-').map(Number);
-            const [toYear, toMonth, toDay] = dateTo.split('-').map(Number);
-            const sinceDate = new Date(fromYear, fromMonth - 1, fromDay, 0, 0, 0, 0);
-            const untilDate = new Date(toYear, toMonth - 1, toDay, 23, 59, 59, 999);
+        // Filter localChats to find those belonging to this manager
+        // This avoids re-fetching and keeps consistency with the displayed count
+        const managerChats = localChats.filter(chat =>
+            chat.last_dialog?.responsible?.id === managerId
+        );
 
-            // Get messages from this user in the date range
-            const allMessages = [];
-            let lastId = null;
-            let hasMore = true;
-            const MAX_PAGES = 20;
-            let page = 0;
-
-            while (hasMore && page < MAX_PAGES) {
-                const messages = await client.getMessagesByUser({
-                    userId: managerId,
-                    since: sinceDate.toISOString(),
-                    until: untilDate.toISOString(),
-                    limit: 100,
-                    sinceId: lastId
-                });
-
-                if (!Array.isArray(messages) || messages.length === 0) {
-                    hasMore = false;
-                    break;
-                }
-
-                allMessages.push(...messages);
-                lastId = messages[messages.length - 1]?.id;
-
-                if (messages.length < 100) {
-                    hasMore = false;
-                }
-                page++;
-            }
-
-            console.log(`[getDialogsForManager] Found ${allMessages.length} messages from this manager`);
-
-            // Extract unique dialog IDs from manager's messages
-            const dialogIdsFromMessages = new Set();
-            allMessages.forEach(msg => {
-                if (msg.dialog?.id) {
-                    dialogIdsFromMessages.add(msg.dialog.id);
-                }
-            });
-
-            console.log(`[getDialogsForManager] Found ${dialogIdsFromMessages.size} unique dialogs from messages`);
-
-            // Get closed dialog IDs from localChats
-            const closedDialogIds = new Set(localChats.map(c => c.dialogId));
-
-            // Only include dialogs that are CLOSED
-            const closedManagerDialogIds = [...dialogIdsFromMessages].filter(id => closedDialogIds.has(id));
-
-            console.log(`[getDialogsForManager] ${closedManagerDialogIds.length} of those are closed`);
-
-            // Convert to the format we need
-            return closedManagerDialogIds.map(dialogId => {
-                // Try to find the dialog in localChats to get its info
-                const localChat = localChats.find(c => c.dialogId === dialogId);
-                return {
-                    id: localChat?.id || null,
-                    dialogId: dialogId,
-                    tags: localChat?.tags || [], // Include tags
-                    last_dialog: localChat?.last_dialog || {
-                        id: dialogId,
-                        closed_at: new Date().toISOString(),
-                        responsible: { id: managerId }
-                    }
-                };
-            });
-        } catch (error) {
-            console.error('[getDialogsForManager] Error:', error);
-            return [];
-        }
+        console.log(`[getDialogsForManager] Found ${managerChats.length} dialogs in memory`);
+        return managerChats;
     };
+
 
     const selectRandomChats = (managerChats, count) => {
         const shuffled = [...managerChats].sort(() => 0.5 - Math.random());
@@ -811,7 +841,7 @@ const EvaluationPanel = ({ client }) => {
                             <input
                                 type="date"
                                 value={dateFrom}
-                                onChange={(e) => setDateFrom(e.target.value)}
+                                onChange={(e) => handleDateChange('from', e.target.value)}
                                 className="form-input"
                                 style={{ width: '140px' }}
                             />
@@ -822,7 +852,7 @@ const EvaluationPanel = ({ client }) => {
                             <input
                                 type="date"
                                 value={dateTo}
-                                onChange={(e) => setDateTo(e.target.value)}
+                                onChange={(e) => handleDateChange('to', e.target.value)}
                                 className="form-input"
                                 style={{ width: '140px' }}
                             />
@@ -992,6 +1022,127 @@ const EvaluationPanel = ({ client }) => {
                             <Download size={16} />
                             Exportar a Excel
                         </button>
+                    </div>
+
+                    {/* VISUALIZACIÓN: Radar Charts */}
+                    <div className="charts-section">
+                        {/* Radar Promedio General */}
+                        <div className="average-radar-container">
+                            <h4>📊 Promedio General ({results.filter(r => !r.error).length} chats evaluados)</h4>
+                            <ResponsiveContainer width="100%" height={400}>
+                                <RadarChart data={[
+                                    {
+                                        category: 'Scripts',
+                                        value: averages?.scripts || 0,
+                                        fullMark: 20
+                                    },
+                                    {
+                                        category: 'Protocolo',
+                                        value: averages?.protocolo || 0,
+                                        fullMark: 60
+                                    },
+                                    {
+                                        category: 'Calidad',
+                                        value: averages?.calidad || 0,
+                                        fullMark: 10
+                                    },
+                                    {
+                                        category: 'Registro',
+                                        value: averages?.registro || 0,
+                                        fullMark: 10
+                                    }
+                                ]}>
+                                    <PolarGrid stroke="var(--border-color)" />
+                                    <PolarAngleAxis
+                                        dataKey="category"
+                                        tick={{ fill: 'var(--text-primary)', fontSize: 14, fontWeight: 'bold' }}
+                                    />
+                                    <PolarRadiusAxis
+                                        angle={90}
+                                        domain={[0, 'dataMax']}
+                                        tick={{ fill: 'var(--text-muted)' }}
+                                    />
+                                    <Radar
+                                        name="Puntaje Promedio"
+                                        dataKey="value"
+                                        stroke="#4F46E5"
+                                        fill="#4F46E5"
+                                        fillOpacity={0.6}
+                                    />
+                                    <Tooltip
+                                        contentStyle={{
+                                            background: 'var(--bg-secondary)',
+                                            border: '1px solid var(--border-color)',
+                                            borderRadius: '8px'
+                                        }}
+                                        formatter={(value, name, props) => {
+                                            const numValue = parseFloat(value) || 0;
+                                            return [
+                                                `${numValue.toFixed(1)} / ${props.payload.fullMark}`,
+                                                name
+                                            ];
+                                        }}
+                                    />
+                                    <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                                </RadarChart>
+                            </ResponsiveContainer>
+                        </div>
+
+                        {/* Grid de Mini-Radars Individuales */}
+                        <div className="mini-radars-section">
+                            <h4>📈 Detalle por Muestra</h4>
+                            <div className="mini-radars-grid">
+                                {results.filter(r => !r.error).map((result, idx) => {
+                                    const radarData = [
+                                        {
+                                            category: 'Scripts',
+                                            value: result.evaluation.scripts.total,
+                                            fullMark: 20
+                                        },
+                                        {
+                                            category: 'Proto',
+                                            value: result.evaluation.protocolo.total,
+                                            fullMark: 60
+                                        },
+                                        {
+                                            category: 'Cal',
+                                            value: result.evaluation.calidad.total,
+                                            fullMark: 10
+                                        },
+                                        {
+                                            category: 'Reg',
+                                            value: result.evaluation.registro.total,
+                                            fullMark: 10
+                                        }
+                                    ];
+
+                                    return (
+                                        <div key={`${result.dialogId}-${result.evaluation.promedio_final}`} className="mini-radar-card" title={`Diálogo ${result.dialogId}`}>
+                                            <div className="mini-radar-header">
+                                                <span className="mini-radar-label">M{idx + 1}</span>
+                                                <span className="mini-radar-total">{result.evaluation.promedio_final}</span>
+                                            </div>
+                                            <ResponsiveContainer width="100%" height={150}>
+                                                <RadarChart data={radarData}>
+                                                    <PolarGrid stroke="var(--border-color)" strokeWidth={0.5} />
+                                                    <PolarAngleAxis
+                                                        dataKey="category"
+                                                        tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
+                                                    />
+                                                    <Radar
+                                                        dataKey="value"
+                                                        stroke="#10B981"
+                                                        fill="#10B981"
+                                                        fillOpacity={0.5}
+                                                        strokeWidth={2}
+                                                    />
+                                                </RadarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
                     </div>
 
                     <table className="evaluation-table">

@@ -79,7 +79,7 @@ export const createClient = (baseUrl, token) => {
     };
 
     // Get dialogs with filters - optimized for date range and user filtering
-    const getDialogs = async ({ since, until, userId, active = false, limit = 100, sinceId } = {}) => {
+    const getDialogs = async ({ since, until, userId, active = false, limit = 100, sinceId, offset } = {}) => {
         try {
             const params = { limit };
             if (since) params.since = since;
@@ -87,6 +87,7 @@ export const createClient = (baseUrl, token) => {
             if (userId) params.user_id = userId;
             if (active !== undefined) params.active = active ? 'true' : 'false';
             if (sinceId) params.since_id = sinceId;
+            if (offset !== undefined) params.offset = offset;
 
             const response = await proxyFetch('/dialogs', params);
             if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`);
@@ -98,13 +99,14 @@ export const createClient = (baseUrl, token) => {
     };
 
     // Get messages filtered by user_id and date range - to find dialogs where a manager participated
-    const getMessagesByUser = async ({ userId, since, until, limit = 100, sinceId } = {}) => {
+    const getMessagesByUser = async ({ userId, since, until, limit = 100, sinceId, offset } = {}) => {
         try {
             const params = { limit };
             if (userId) params.user_id = userId;
             if (since) params.since = since;
             if (until) params.until = until;
             if (sinceId) params.since_id = sinceId;
+            if (offset !== undefined) params.offset = offset;
 
             const response = await proxyFetch('/messages', params);
             if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`);
