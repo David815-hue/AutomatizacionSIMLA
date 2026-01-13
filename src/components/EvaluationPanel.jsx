@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { BarChart3, Play, Loader, ChevronDown, ChevronUp, Eye, X, RefreshCw, Download, Calendar } from 'lucide-react';
-import { RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { BarChart3, Play, Loader, ChevronDown, ChevronUp, Eye, X, RefreshCw, Download, Calendar, ArrowRight, Check, AlertCircle, FileText, AlertTriangle } from 'lucide-react';
+import { RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { DateRange } from 'react-date-range';
+import { motion, AnimatePresence } from 'framer-motion';
 import 'react-date-range/dist/styles.css';
 import 'react-date-range/dist/theme/default.css';
 import { evaluateMultipleChats } from '../api/groq';
@@ -26,12 +27,279 @@ const KNOWN_MANAGERS = [
     { name: 'Sanchez Yohana', email: 'callcenter6@puntofarma.hn' },
 ];
 
+/* --- ANIMATION VARIANTS --- */
+const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+        opacity: 1,
+        transition: {
+            staggerChildren: 0.1,
+            delayChildren: 0.2
+        }
+    }
+};
+
+const itemVariants = {
+    hidden: { y: 20, opacity: 0 },
+    visible: {
+        y: 0,
+        opacity: 1,
+        transition: { type: 'spring', stiffness: 300, damping: 24 }
+    }
+};
+
+/* --- SUB-COMPONENTS --- */
+
+const StatCard = ({ title, value, icon: Icon, color, delay }) => (
+    <motion.div
+        variants={itemVariants}
+        className="glass-card stat-card"
+        style={{
+            padding: '1.5rem',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.5rem',
+            borderLeft: `4px solid ${color}`
+        }}
+    >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-secondary)' }}>
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase' }}>{title}</span>
+            {Icon && <Icon size={18} style={{ opacity: 0.7 }} />}
+        </div>
+        <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+            {value}
+        </div>
+    </motion.div>
+);
+
+const ScoreBadge = ({ score, max = 100 }) => {
+    let color = 'var(--danger)';
+    if (score >= max * 0.9) color = 'var(--success)';
+    else if (score >= max * 0.7) color = 'var(--warning)';
+
+    return (
+        <div style={{
+            background: color,
+            color: '#fff',
+            padding: '0.2rem 0.6rem',
+            borderRadius: '12px',
+            fontSize: '0.75rem',
+            fontWeight: 'bold',
+            boxShadow: `0 2px 10px ${color}66`
+        }}>
+            {typeof score === 'number' ? score.toFixed(1) : score}/{max}
+        </div>
+    );
+};
+
+const MiniRadarChart = ({ data }) => {
+    const chartData = [
+        { category: 'Scripts', A: data.scripts.total, fullMark: 20 },
+        { category: 'Protocolo', A: (data.protocolo.total / 60) * 20, fullMark: 20 },
+        { category: 'Calidad', A: (data.calidad.total / 10) * 20, fullMark: 20 },
+        { category: 'Registro', A: (data.registro.total / 10) * 20, fullMark: 20 }
+    ];
+
+    return (
+        <div style={{ width: '100%', height: '180px', position: 'relative' }}>
+            <ResponsiveContainer width="100%" height="100%">
+                <RadarChart cx="50%" cy="50%" outerRadius="70%" data={chartData}>
+                    <PolarGrid stroke="var(--border-color)" />
+                    <PolarAngleAxis dataKey="category" tick={{ fontSize: 10, fill: 'var(--text-secondary)' }} />
+                    <PolarRadiusAxis angle={30} domain={[0, 20]} tick={false} axisLine={false} />
+                    <Radar dataKey="A" stroke="var(--coral)" fill="var(--coral)" fillOpacity={0.4} />
+                    <Tooltip
+                        contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '8px', fontSize: '12px' }}
+                        itemStyle={{ color: 'var(--text-primary)' }}
+                        formatter={(value, name, props) => {
+                            // Scale back to original for tooltip
+                            const originalMax = props.payload.fullMark === 20 ? (name === 'Scripts' ? 20 : name === 'Protocolo' ? 60 : 10) : 100;
+                            const originalValue = (value / 20) * originalMax;
+                            // Handle edge case for Scripts which is exactly 20
+                            const displayValue = name === 'Scripts' ? value : originalValue;
+                            return [displayValue.toFixed(1), name];
+                        }}
+                    />
+                </RadarChart>
+            </ResponsiveContainer>
+        </div>
+    );
+};
+
+// Schema reference for detailed editing
+const EVALUATION_SCHEMA = {
+    scripts: {
+        label: 'Scripts',
+        max: 20,
+        fields: [
+            { key: 'saludo', label: 'Saludo', max: 10 },
+            { key: 'despedida', label: 'Despedida', max: 10 }
+        ]
+    },
+    protocolo: {
+        label: 'Protocolo',
+        max: 60,
+        fields: [
+            { key: 'personaliza', label: 'Personaliza', max: 5 },
+            { key: 'tiempos_respuesta', label: 'Tiempos R.', max: 5 },
+            { key: 'tiempo_espera', label: 'Espera', max: 7 },
+            { key: 'valida_datos', label: 'Valida Datos', max: 5 },
+            { key: 'toma_pedido', label: 'Toma Pedido', max: 9 },
+            { key: 'ofrece_adicionales', label: 'Adicionales', max: 8 },
+            { key: 'confirma_orden', label: 'Confirma', max: 7 },
+            { key: 'link_pago', label: 'Link Pago', max: 7 },
+            { key: 'ayuda_adicional', label: 'Ayuda', max: 4 },
+            { key: 'sin_silencios', label: 'Sin Silencios', max: 3 }
+        ]
+    },
+    calidad: {
+        label: 'Calidad',
+        max: 10,
+        fields: [
+            { key: 'dominio_seguridad', label: 'Dominio', max: 3 },
+            { key: 'redaccion_clara', label: 'Redacción', max: 3 },
+            { key: 'empatia_cortesia', label: 'Empatía', max: 4 }
+        ]
+    },
+    registro: {
+        label: 'Registro',
+        max: 10,
+        fields: [
+            { key: 'confirma_datos', label: 'Confirma Datos', max: 5 },
+            { key: 'etiquetas', label: 'Etiquetas', max: 5 }
+        ]
+    }
+};
+
+const ResultsTable = ({ results, onEdit, onView, onReload, expandedRow, setExpandedRow }) => (
+    <div style={{ overflowX: 'auto', background: 'transparent' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+            <thead>
+                <tr style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-secondary)', textAlign: 'left' }}>
+                    <th style={{ padding: '1rem', width: '50px' }}></th>
+                    <th style={{ padding: '1rem' }}>Muestra</th>
+                    <th style={{ padding: '1rem' }}>Dialog ID</th>
+                    <th style={{ padding: '1rem', textAlign: 'center' }}>Scripts (20pts)</th>
+                    <th style={{ padding: '1rem', textAlign: 'center' }}>Protocolo (60pts)</th>
+                    <th style={{ padding: '1rem', textAlign: 'center' }}>Calidad (10pts)</th>
+                    <th style={{ padding: '1rem', textAlign: 'center' }}>Registro (10pts)</th>
+                    <th style={{ padding: '1rem' }}>Total</th>
+                    <th style={{ padding: '1rem' }}>Acciones</th>
+                </tr>
+            </thead>
+            <tbody>
+                {results.map((res, idx) => (
+                    <React.Fragment key={idx}>
+                        <tr style={{ borderBottom: expandedRow === idx ? 'none' : '1px solid var(--border-color)', transition: 'background 0.2s', background: expandedRow === idx ? 'var(--bg-secondary)' : 'transparent' }} className="hover:bg-white/5">
+                            <td style={{ padding: '1rem', textAlign: 'center' }}>
+                                <button
+                                    onClick={() => setExpandedRow(expandedRow === idx ? null : idx)}
+                                    style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer' }}
+                                >
+                                    {expandedRow === idx ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                                </button>
+                            </td>
+                            <td style={{ padding: '1rem' }}>#{idx + 1}</td>
+                            <td style={{ padding: '1rem', fontFamily: 'monospace' }}>{res.dialogId}</td>
+                            <td style={{ padding: '1rem', textAlign: 'center' }}>
+                                <div style={{ fontWeight: 'bold' }}>{res.evaluation?.scripts?.total || 0}</div>
+                            </td>
+                            <td style={{ padding: '1rem', textAlign: 'center' }}>
+                                <div style={{ fontWeight: 'bold' }}>{res.evaluation?.protocolo?.total || 0}</div>
+                            </td>
+                            <td style={{ padding: '1rem', textAlign: 'center' }}>
+                                <div style={{ fontWeight: 'bold' }}>{res.evaluation?.calidad?.total || 0}</div>
+                            </td>
+                            <td style={{ padding: '1rem', textAlign: 'center' }}>
+                                <div style={{ fontWeight: 'bold' }}>{res.evaluation?.registro?.total || 0}</div>
+                            </td>
+                            <td style={{ padding: '1rem', fontWeight: 'bold', color: res.evaluation?.promedio_final >= 90 ? 'var(--success)' : res.evaluation?.promedio_final >= 70 ? 'var(--warning)' : 'var(--danger)' }}>
+                                {res.evaluation?.promedio_final || 0}
+                            </td>
+                            <td style={{ padding: '1rem', display: 'flex', gap: '0.5rem' }}>
+                                <button className="btn-icon" onClick={() => onView(res)} title="Ver Chat"><Eye size={16} /></button>
+                                <button className="btn-icon" onClick={() => onReload(idx)} title="Re-evaluar"><RefreshCw size={16} className={res.isReloading ? 'animate-spin' : ''} /></button>
+                            </td>
+                        </tr>
+                        {/* DETAILED EDITING ROW */}
+                        <AnimatePresence>
+                            {expandedRow === idx && (
+                                <motion.tr
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                >
+                                    <td colSpan="9" style={{ padding: '0 1rem 1rem 1rem', borderBottom: '1px solid var(--border-color)', background: 'var(--bg-secondary)' }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.5rem', padding: '1rem', borderTop: '1px solid var(--border-color)' }}>
+                                            {Object.entries(EVALUATION_SCHEMA).map(([key, schema]) => (
+                                                <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                                    <h4 style={{ fontSize: '0.8rem', color: 'var(--coral)', textTransform: 'uppercase', marginBottom: '0.3rem' }}>
+                                                        {schema.label} (editable)
+                                                    </h4>
+                                                    {schema.fields.map(field => (
+                                                        <div key={field.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                                                <span style={{ color: 'var(--text-secondary)' }}>{field.label}:</span>
+                                                                {key === 'registro' && (
+                                                                    <div title="Verificar manualmente">
+                                                                        <AlertTriangle size={12} color="var(--warning)" />
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                                                <input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    max={field.max}
+                                                                    value={res.evaluation?.[key]?.[field.key] || 0}
+                                                                    onChange={(e) => onEdit(idx, key, field.key, e.target.value, field.max)}
+                                                                    className="form-input"
+                                                                    style={{
+                                                                        width: '45px',
+                                                                        padding: '0.2rem',
+                                                                        textAlign: 'center',
+                                                                        fontSize: '0.8rem',
+                                                                        borderColor: key === 'registro' ? 'var(--warning)' : 'var(--border-color)',
+                                                                        background: key === 'registro' ? 'rgba(255, 193, 7, 0.1)' : 'var(--bg-primary)'
+                                                                    }}
+                                                                />
+                                                                <span style={{ fontSize: '0.7rem', opacity: 0.5 }}>/{field.max}</span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                    <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-color)', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                                                        <span>Total {schema.label}:</span>
+                                                        <span>{res.evaluation?.[key]?.total || 0}/{schema.max}</span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {/* OBSERVATIONS */}
+                                            <div style={{ gridColumn: '1 / -1', marginTop: '0.5rem' }}>
+                                                <h4 style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '0.3rem' }}>Observaciones</h4>
+                                                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.5rem', background: 'rgba(0,0,0,0.1)', borderRadius: '6px' }}>
+                                                    {res.evaluation?.observaciones || 'Sin observaciones.'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </td>
+                                </motion.tr>
+                            )}
+                        </AnimatePresence>
+                    </React.Fragment>
+                ))}
+            </tbody>
+        </table>
+    </div>
+);
+
+
 const EvaluationPanel = ({ client }) => {
     const [selectedManager, setSelectedManager] = useState('');
     const [sampleCount, setSampleCount] = useState(5);
     const [isEvaluating, setIsEvaluating] = useState(false);
     const [progress, setProgress] = useState({ current: 0, total: 0 });
     const [results, setResults] = useState([]);
+    const [viewMode, setViewMode] = useState('table'); // 'table' | 'radar'
     const [expandedChat, setExpandedChat] = useState(null);
     const [modalChat, setModalChat] = useState(null);
 
@@ -302,10 +570,10 @@ const EvaluationPanel = ({ client }) => {
 
     // Auto-load dialogs when dates change
     useEffect(() => {
-        if (client && dateFrom && dateTo) {
+        if (client && dateFrom && dateTo && !useMultipleIds) {
             loadDialogsForDateRange();
         }
-    }, [client, dateFrom, dateTo, loadDialogsForDateRange]);
+    }, [client, dateFrom, dateTo, loadDialogsForDateRange, useMultipleIds]);
 
     // Load manager dialog count when manager or dates change
     useEffect(() => {
@@ -773,714 +1041,490 @@ const EvaluationPanel = ({ client }) => {
     const averages = calculateAverages();
 
     return (
-        <div className="evaluation-panel">
-            <div className="evaluation-header" style={{ justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <BarChart3 size={24} />
-                    <h2>Evaluación de Gestores</h2>
+        <motion.div
+            className="evaluation-dashboard app-container"
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+            style={{ flexDirection: 'column', height: '100vh', overflow: 'hidden' }}
+        >
+            {/* Header */}
+            <header className="glass-effect" style={{
+                padding: '1rem 2rem',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                zIndex: 50
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                    <div className="icon-box" style={{
+                        background: 'linear-gradient(135deg, var(--coral) 0%, var(--violet) 100%)',
+                        width: '40px', height: '40px', borderRadius: '12px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        color: 'white', boxShadow: '0 4px 15px rgba(59, 130, 246, 0.4)'
+                    }}>
+                        <BarChart3 size={24} />
+                    </div>
+                    <div>
+                        <h1 style={{ fontSize: '1.5rem', fontWeight: 800, lineHeight: 1 }}>Evaluación AI</h1>
+                        <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Performance & Quality Control</span>
+                    </div>
                 </div>
                 <ThemeToggle />
-            </div>
+            </header>
 
-            <div className="evaluation-controls">
-                {/* Mode Toggle */}
-                {/* Mode Toggle */}
-                <div className="mode-toggle-group">
-                    <label className="mode-label">Modo:</label>
-                    <div className="toggle-options">
-                        <label className={`toggle-option ${!useMultipleIds ? 'active' : ''}`}>
-                            <input
-                                type="radio"
-                                name="evalMode"
-                                checked={!useMultipleIds}
-                                onChange={() => setUseMultipleIds(false)}
-                            />
-                            <div className="radio-dot"></div>
-                            <span>Aleatorio</span>
-                        </label>
-                        <label className={`toggle-option ${useMultipleIds ? 'active' : ''}`}>
-                            <input
-                                type="radio"
-                                name="evalMode"
-                                checked={useMultipleIds}
-                                onChange={() => setUseMultipleIds(true)}
-                            />
-                            <div className="radio-dot"></div>
-                            <span>Lista de IDs</span>
-                        </label>
-                    </div>
-                </div>
-
-                {/* Conditional Controls */}
-                {!useMultipleIds ? (
-                    // Random mode
-                    <>
-                        <select
-                            value={selectedManager}
-                            onChange={(e) => setSelectedManager(e.target.value)}
-                            className="form-input"
-                        >
-                            <option value="">Seleccionar Gestor</option>
-                            {KNOWN_MANAGERS.map(m => (
-                                <option key={m.email} value={m.email}>{m.name}</option>
-                            ))}
-                        </select>
-
-                        {/* Date Range Picker */}
-                        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                            <button
-                                type="button"
-                                onClick={() => setShowCalendar(!showCalendar)}
-                                className="btn btn-secondary"
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.5rem',
-                                    padding: '0.5rem 1rem'
-                                }}
-                            >
-                                <Calendar size={16} />
-                                <span>{dateFrom === dateTo ? dateFrom : `${dateFrom} - ${dateTo}`}</span>
-                                {showCalendar ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                            </button>
-
-                            {showCalendar && (
-                                <div style={{
-                                    position: 'absolute',
-                                    top: '100%',
-                                    left: 0,
-                                    zIndex: 1000,
-                                    marginTop: '0.5rem',
-                                    boxShadow: '0 10px 40px rgba(0, 0, 0, 0.3)',
-                                    borderRadius: '12px',
-                                    overflow: 'hidden',
-                                    border: '1px solid var(--glass-border)',
-                                    background: 'var(--card-bg)'
-                                }}>
-                                    <DateRange
-                                        ranges={[dateRange]}
-                                        onChange={handleDateRangeChange}
-                                        maxDate={new Date()}
-                                        moveRangeOnFirstSelection={false}
-                                        months={1}
-                                        direction="horizontal"
-                                        rangeColors={['#4ECDC4']}
-                                    />
-                                    <div style={{
-                                        padding: '0.75rem',
-                                        background: 'var(--card-bg)',
-                                        borderTop: '1px solid var(--glass-border)',
-                                        fontSize: '0.75rem',
-                                        color: 'var(--text-secondary)',
-                                        textAlign: 'center'
-                                    }}>
-                                        Máximo 3 días de rango
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="sample-control">
-                            <label>Muestras:</label>
-                            <input
-                                type="number"
-                                min="1"
-                                max="10"
-                                value={sampleCount}
-                                onChange={(e) => setSampleCount(parseInt(e.target.value) || 5)}
-                                className="form-input"
-                                style={{ width: '60px' }}
-                            />
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderLeft: '1px solid var(--glass-border)', paddingLeft: '1rem', marginLeft: '0.5rem' }}>
-                            <label style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>O ID específico:</label>
-                            <input
-                                type="text"
-                                value={specificDialogId}
-                                onChange={(e) => setSpecificDialogId(e.target.value)}
-                                placeholder="92458"
-                                className="form-input"
-                                style={{ width: '100px' }}
-                            />
-                        </div>
-                    </>
-                ) : (
-                    // List mode
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                        <label style={{ fontSize: '0.85rem', fontWeight: '600' }}>IDs de diálogos (uno por línea):</label>
-                        <textarea
-                            value={multipleDialogIds}
-                            onChange={(e) => setMultipleDialogIds(e.target.value)}
-                            placeholder={'12312\n12342\n4534'}
-                            className="form-input"
-                            style={{
-                                width: '100%',
-                                minHeight: '100px',
-                                fontFamily: 'monospace',
-                                fontSize: '0.9rem',
-                                resize: 'vertical'
-                            }}
-                        />
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                            {multipleDialogIds.split('\n').filter(id => id.trim() && !isNaN(id.trim())).length} IDs válidos
-                        </div>
-                    </div>
-                )}
-
-                {/* Closed-only filter */}
-                {/* Closed-only filter */}
-                <div className="closed-filter-container">
-                    <span className="filter-label">Solo diálogos cerrados</span>
-                    <label className="switch">
-                        <input
-                            type="checkbox"
-                            checked={onlyClosedDialogs}
-                            onChange={(e) => setOnlyClosedDialogs(e.target.checked)}
-                        />
-                        <span className="slider round"></span>
-                    </label>
-                </div>
-
-                <button
-                    onClick={handleEvaluate}
-                    disabled={isEvaluating || isLoadingChats || (!useMultipleIds && !selectedManager && !specificDialogId.trim()) || (useMultipleIds && !multipleDialogIds.trim())}
-                    className="btn btn-primary"
-                >
-                    {isEvaluating ? (
-                        <>
-                            <Loader className="animate-spin" size={16} />
-                            Evaluando {progress.current}/{progress.total}...
-                        </>
-                    ) : (
-                        <>
-                            <Play size={16} />
-                            Evaluar
-                        </>
-                    )}
-                </button>
-            </div>
-
-            {/* Chat loading status */}
-            <div className="chat-status" style={{
-                padding: '0.75rem 1rem',
-                background: 'var(--card-bg)',
-                borderRadius: '8px',
-                marginBottom: '1rem',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                border: '1px solid var(--glass-border)'
+            <div className="dashboard-layout" style={{
+                display: 'grid',
+                gridTemplateColumns: '320px 1fr',
+                gap: '1.5rem',
+                padding: '1.5rem',
+                height: 'calc(100vh - 80px)',
+                overflow: 'hidden'
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    {isLoadingChats ? (
-                        <>
-                            <Loader className="animate-spin" size={16} style={{ color: 'var(--accent-primary)' }} />
-                            <span style={{ color: 'var(--text-secondary)' }}>Cargando chats para el rango de fechas...</span>
-                        </>
-                    ) : chatsLoaded ? (
-                        <>
-                            <span style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                width: '24px',
-                                height: '24px',
-                                borderRadius: '50%',
-                                background: localChats.length > 0 ? 'var(--success-bg)' : 'var(--warning-bg)',
-                                color: localChats.length > 0 ? 'var(--success-color)' : 'var(--warning-color)',
-                                fontSize: '0.75rem',
-                                fontWeight: 'bold'
-                            }}>
-                                {localChats.length > 0 ? '✓' : '!'}
-                            </span>
-                            <span style={{ color: 'var(--text-primary)' }}>
-                                <strong>{localChats.length}</strong> chats encontrados para el rango <strong>{dateFrom}</strong> al <strong>{dateTo}</strong>
-                            </span>
-                            {selectedManager && (
-                                <span style={{ color: 'var(--text-secondary)', marginLeft: '0.5rem' }}>
-                                    ({isLoadingManagerCount ? (
-                                        'Cargando...'
-                                    ) : managerDialogCount !== null ? (
-                                        <><strong>{managerDialogCount}</strong> diálogos de {KNOWN_MANAGERS.find(m => m.email === selectedManager)?.name}</>
-                                    ) : (
-                                        `Gestor: ${KNOWN_MANAGERS.find(m => m.email === selectedManager)?.name}`
-                                    )})
-                                </span>
-                            )}
-                        </>
-                    ) : (
-                        <span style={{ color: 'var(--text-secondary)' }}>Selecciona un rango de fechas para cargar chats</span>
-                    )}
-                </div>
-                <button
-                    onClick={loadDialogsForDateRange}
-                    disabled={isLoadingChats || !dateFrom || !dateTo}
-                    className="btn btn-secondary"
-                    style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                    title="Recargar chats"
+                {/* SIDEBAR CONTROLS */}
+                <motion.aside
+                    className="glass-card sidebar-controls"
+                    initial={{ x: -50, opacity: 0 }}
+                    animate={{ x: 0, opacity: 1 }}
+                    transition={{ delay: 0.2 }}
+                    style={{
+                        padding: '1.5rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '1.5rem',
+                        overflowY: 'auto'
+                    }}
                 >
-                    <RefreshCw size={14} className={isLoadingChats ? 'animate-spin' : ''} />
-                    Recargar
-                </button>
-            </div>
-
-            {results.length > 0 && (
-                <div className="evaluation-results">
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '1rem' }}>
-                        <h3>Reporte de Coaching - {managerNameForList || manager?.name || 'Evaluación'}</h3>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-                            {useMultipleIds && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <label style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-secondary)' }}>
-                                        Nombre del gestor:
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={managerNameForList}
-                                        onChange={(e) => setManagerNameForList(e.target.value)}
-                                        placeholder="Ej: Corea Kimberly"
-                                        className="form-input"
-                                        style={{ width: '200px', padding: '0.5rem 0.75rem' }}
-                                    />
-                                </div>
-                            )}
+                    <div className="control-section">
+                        <label className="section-label">Modo de Evaluación</label>
+                        <div className="toggle-group glass-effect" style={{ padding: '0.5rem', borderRadius: '12px', display: 'flex' }}>
                             <button
-                                onClick={() => exportEvaluationsToExcel(results, managerNameForList || manager?.name || selectedManager || 'Evaluación')}
-                                className="btn"
+                                className={`btn-toggle ${!useMultipleIds ? 'active' : ''}`}
+                                onClick={() => setUseMultipleIds(false)}
                                 style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.5rem',
-                                    background: 'var(--success-bg)',
-                                    color: 'var(--success-color)',
-                                    border: '1px solid var(--success-color)'
+                                    flex: 1, padding: '0.5rem', borderRadius: '8px', border: 'none',
+                                    background: !useMultipleIds ? 'var(--glass-bg-hover)' : 'transparent',
+                                    color: !useMultipleIds ? 'var(--coral)' : 'var(--text-secondary)',
+                                    fontWeight: !useMultipleIds ? 'bold' : 'normal',
+                                    transition: 'all 0.3s ease'
                                 }}
                             >
-                                <Download size={16} />
-                                Exportar a Excel
+                                Random
+                            </button>
+                            <button
+                                className={`btn-toggle ${useMultipleIds ? 'active' : ''}`}
+                                onClick={() => setUseMultipleIds(true)}
+                                style={{
+                                    flex: 1, padding: '0.5rem', borderRadius: '8px', border: 'none',
+                                    background: useMultipleIds ? 'var(--glass-bg-hover)' : 'transparent',
+                                    color: useMultipleIds ? 'var(--coral)' : 'var(--text-secondary)',
+                                    fontWeight: useMultipleIds ? 'bold' : 'normal',
+                                    transition: 'all 0.3s ease'
+                                }}
+                            >
+                                Manual IDs
                             </button>
                         </div>
                     </div>
 
-                    {/* VISUALIZACIÓN: Radar Charts */}
-                    <div className="charts-section">
-                        {/* Radar Promedio General */}
-                        <div className="average-radar-container">
-                            <h4>📊 Promedio General ({results.filter(r => !r.error).length} chats evaluados)</h4>
-                            <ResponsiveContainer width="100%" height={400}>
-                                <RadarChart data={[
-                                    {
-                                        category: 'Scripts',
-                                        percentage: ((averages?.scripts || 0) / 20) * 100,
-                                        actual: averages?.scripts || 0,
-                                        fullMark: 100
-                                    },
-                                    {
-                                        category: 'Protocolo',
-                                        percentage: ((averages?.protocolo || 0) / 60) * 100,
-                                        actual: averages?.protocolo || 0,
-                                        fullMark: 100
-                                    },
-                                    {
-                                        category: 'Calidad',
-                                        percentage: ((averages?.calidad || 0) / 10) * 100,
-                                        actual: averages?.calidad || 0,
-                                        fullMark: 100
-                                    },
-                                    {
-                                        category: 'Registro',
-                                        percentage: ((averages?.registro || 0) / 10) * 100,
-                                        actual: averages?.registro || 0,
-                                        fullMark: 100
-                                    }
-                                ]}>
-                                    <PolarGrid stroke="var(--border-color)" />
-                                    <PolarAngleAxis
-                                        dataKey="category"
-                                        tick={{ fill: 'var(--text-primary)', fontSize: 14, fontWeight: 'bold' }}
-                                    />
-                                    <PolarRadiusAxis
-                                        angle={90}
-                                        domain={[0, 'dataMax']}
-                                        tick={{ fill: 'var(--text-muted)' }}
-                                    />
-                                    <Radar
-                                        name="Desempeño (%)"
-                                        dataKey="percentage"
-                                        stroke="#4F46E5"
-                                        fill="#4F46E5"
-                                        fillOpacity={0.6}
-                                    />
-                                    <Tooltip
-                                        contentStyle={{
-                                            background: 'var(--bg-secondary)',
-                                            border: '1px solid var(--border-color)',
-                                            borderRadius: '8px'
-                                        }}
-                                        formatter={(value, name, props) => {
-                                            const percentage = parseFloat(value) || 0;
-                                            const actual = parseFloat((props && props.payload && props.payload.actual) || 0);
-                                            return [
-                                                `${percentage.toFixed(1)}% (${actual.toFixed(1)} pts)`,
-                                                name
-                                            ];
-                                        }}
-                                    />
-                                    <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                                </RadarChart>
-                            </ResponsiveContainer>
-                        </div>
+                    {!useMultipleIds ? (
+                        <>
+                            <div className="control-section">
+                                <label className="section-label">Gestor</label>
+                                <select
+                                    value={selectedManager}
+                                    onChange={(e) => setSelectedManager(e.target.value)}
+                                    className="form-input"
+                                    style={{ width: '100%', padding: '0.75rem' }}
+                                >
+                                    <option value="">Seleccionar...</option>
+                                    {KNOWN_MANAGERS.map(m => (
+                                        <option key={m.email} value={m.email}>{m.name}</option>
+                                    ))}
+                                </select>
+                            </div>
 
-                        {/* Grid de Mini-Radars Individuales */}
-                        <div className="mini-radars-section">
-                            <h4>📈 Detalle por Muestra</h4>
-                            <div className="mini-radars-grid">
-                                {results.filter(r => !r.error).map((result, idx) => {
-                                    const radarData = [
-                                        {
-                                            category: 'Scripts',
-                                            percentage: (result.evaluation.scripts.total / 20) * 100,
-                                            fullMark: 100
-                                        },
-                                        {
-                                            category: 'Proto',
-                                            percentage: (result.evaluation.protocolo.total / 60) * 100,
-                                            fullMark: 100
-                                        },
-                                        {
-                                            category: 'Cal',
-                                            percentage: (result.evaluation.calidad.total / 10) * 100,
-                                            fullMark: 100
-                                        },
-                                        {
-                                            category: 'Reg',
-                                            percentage: (result.evaluation.registro.total / 10) * 100,
-                                            fullMark: 100
-                                        }
-                                    ];
+                            <div className="control-section" style={{ position: 'relative' }}>
+                                <label className="section-label">Rango de Fechas</label>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowCalendar(!showCalendar)}
+                                    className="form-input"
+                                    style={{
+                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                        width: '100%', cursor: 'pointer', textAlign: 'left'
+                                    }}
+                                >
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                        <Calendar size={16} className="text-accent" />
+                                        <span style={{ fontSize: '0.9rem' }}>
+                                            {dateFrom === dateTo ? dateFrom : `${dateFrom} -> ${dateTo}`}
+                                        </span>
+                                    </div>
+                                    <ChevronDown size={14} />
+                                </button>
 
-                                    return (
-                                        <div key={`${result.dialogId}-${result.evaluation.promedio_final}`} className="mini-radar-card" title={`Diálogo ${result.dialogId}`}>
-                                            <div className="mini-radar-header">
-                                                <span className="mini-radar-label">M{idx + 1}</span>
-                                                <span className="mini-radar-total">{result.evaluation.promedio_final}</span>
+                                <AnimatePresence>
+                                    {showCalendar && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                                            style={{
+                                                position: 'absolute', top: '100%', left: 0, width: '100%', zIndex: 100,
+                                                marginTop: '0.5rem', padding: '0.5rem',
+                                                background: 'var(--bg-secondary)', border: '1px solid var(--coral)',
+                                                borderRadius: '16px', boxShadow: '0 20px 50px rgba(0,0,0,0.5)'
+                                            }}
+                                        >
+                                            <DateRange
+                                                ranges={[dateRange]}
+                                                onChange={handleDateRangeChange}
+                                                maxDate={new Date()}
+                                                moveRangeOnFirstSelection={false}
+                                                months={1}
+                                                direction="horizontal"
+                                                rangeColors={['#3B82F6']}
+                                            />
+                                            <div style={{ textAlign: 'center', fontSize: '0.75rem', padding: '0.5rem', color: 'var(--text-muted)' }}>
+                                                Máximo 3 días permitidos
                                             </div>
-                                            <ResponsiveContainer width="100%" height={150}>
-                                                <RadarChart data={radarData}>
-                                                    <PolarGrid stroke="var(--border-color)" strokeWidth={0.5} />
-                                                    <PolarAngleAxis
-                                                        dataKey="category"
-                                                        tick={{ fill: 'var(--text-muted)', fontSize: 10 }}
-                                                    />
-                                                    <Radar
-                                                        dataKey="percentage"
-                                                        stroke="#10B981"
-                                                        fill="#10B981"
-                                                        fillOpacity={0.5}
-                                                        strokeWidth={2}
-                                                    />
-                                                </RadarChart>
-                                            </ResponsiveContainer>
-                                        </div>
-                                    );
-                                })}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+
+                            <div className="control-section">
+                                <label className="section-label">Muestras</label>
+                                <input
+                                    type="number" min="1" max="50"
+                                    value={sampleCount}
+                                    onChange={(e) => setSampleCount(parseInt(e.target.value) || 5)}
+                                    className="form-input"
+                                />
+                            </div>
+
+                            <div className="control-section">
+                                <label className="section-label">ID Específico (Opcional)</label>
+                                <input
+                                    type="text" placeholder="Ej: 92458"
+                                    value={specificDialogId}
+                                    onChange={(e) => setSpecificDialogId(e.target.value)}
+                                    className="form-input"
+                                />
+                            </div>
+                        </>
+                    ) : (
+                        <div className="control-section">
+                            <label className="section-label">IDs (Uno por línea)</label>
+
+
+
+                            <textarea
+                                value={multipleDialogIds}
+                                onChange={(e) => setMultipleDialogIds(e.target.value)}
+                                placeholder={'12345\n67890'}
+                                className="form-input"
+                                style={{ minHeight: '200px', fontFamily: 'monospace', resize: 'none' }}
+                            />
+                            <div style={{ fontSize: '0.75rem', marginTop: '0.5rem', color: 'var(--text-muted)' }}>
+                                {multipleDialogIds.split('\n').filter(id => id.trim() && !isNaN(id.trim())).length} IDs detectados
                             </div>
                         </div>
+                    )}
+
+                    <div className="control-section" style={{ marginTop: 'auto' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                            <span style={{ fontSize: '0.85rem' }}>Solo Cerrados</span>
+                            <label className="switch">
+                                <input type="checkbox" checked={onlyClosedDialogs} onChange={(e) => setOnlyClosedDialogs(e.target.checked)} />
+                                <span className="slider round"></span>
+                            </label>
+                        </div>
+
+                        <button
+                            onClick={handleEvaluate}
+                            disabled={isEvaluating || (!useMultipleIds && isLoadingChats)}
+                            className="btn btn-primary"
+                            style={{ width: '100%', justifyContent: 'center', padding: '1rem' }}
+                        >
+                            {isEvaluating ? <Loader className="animate-spin" /> : <Play fill="currentColor" />}
+                            {isEvaluating ? 'Evaluando...' : 'Iniciar Evaluación'}
+                        </button>
                     </div>
+                </motion.aside>
 
-                    <table className="evaluation-table">
-                        <thead>
-                            <tr>
-                                <th>Muestra</th>
-                                <th>Dialog ID</th>
-                                <th>Scripts (10%)</th>
-                                <th>Protocolo (40%)</th>
-                                <th>Calidad (30%)</th>
-                                <th>Registro (20%)</th>
-                                <th>Total</th>
-                                <th>Observaciones</th>
-                                <th>Ver</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {results.map((result, idx) => (
-                                <React.Fragment key={result.chatId}>
-                                    <tr
-                                        className="result-row"
-                                        onClick={() => setExpandedChat(expandedChat === idx ? null : idx)}
-                                    >
-                                        <td>
-                                            {expandedChat === idx ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                                            {idx + 1}
-                                        </td>
-                                        <td style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>{result.dialogId}</td>
-                                        {result.error ? (
-                                            <td colSpan="7" className="error-cell">Error: {result.error}</td>
-                                        ) : (
-                                            <>
-                                                <td>{result.evaluation.scripts.total}</td>
-                                                <td>{result.evaluation.protocolo.total}</td>
-                                                <td>{result.evaluation.calidad.total}</td>
-                                                <td>{result.evaluation.registro.total}</td>
-                                                <td className="total-cell">{result.evaluation.promedio_final}</td>
-                                                <td className="obs-cell">{result.evaluation.observaciones}</td>
-                                                <td style={{ display: 'flex', gap: '0.5rem' }}>
-                                                    <button
-                                                        className="btn-icon"
-                                                        onClick={(e) => { e.stopPropagation(); setModalChat(result); }}
-                                                        title="Ver chat"
-                                                    >
-                                                        <Eye size={16} />
-                                                    </button>
-                                                    <button
-                                                        className="btn-icon"
-                                                        onClick={(e) => { e.stopPropagation(); handleReEvaluate(idx); }}
-                                                        title="Reemplazar con otro diálogo"
-                                                        disabled={result.isReloading}
-                                                    >
-                                                        <RefreshCw size={16} className={result.isReloading ? 'animate-spin' : ''} />
-                                                    </button>
-                                                </td>
-                                            </>
-                                        )}
-                                    </tr>
-                                    {expandedChat === idx && result.evaluation && (
-                                        <tr className="detail-row">
-                                            <td colSpan="9">
-                                                <div className="detail-grid">
-                                                    {/* SCRIPTS */}
-                                                    <div className="detail-section">
-                                                        <h5>Scripts <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>(editable)</span></h5>
-                                                        <div className="editable-field">
-                                                            <label>Saludo:</label>
-                                                            <input type="text" value={result.evaluation.scripts.saludo || 0}
-                                                                onChange={(e) => handleEditField(idx, 'scripts', 'saludo', e.target.value, 10)}
-                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
-                                                            <span>/10</span>
-                                                        </div>
-                                                        <div className="editable-field">
-                                                            <label>Despedida:</label>
-                                                            <input type="text" value={result.evaluation.scripts.despedida || 0}
-                                                                onChange={(e) => handleEditField(idx, 'scripts', 'despedida', e.target.value, 10)}
-                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
-                                                            <span>/10</span>
-                                                        </div>
-                                                        <p style={{ marginTop: '0.5rem', fontWeight: 'bold' }}>Total: {result.evaluation.scripts.total}/20</p>
-                                                    </div>
+                {/* MAIN CONTENT AREA */}
+                <div className="main-scroll-area" style={{ overflowY: 'auto', paddingRight: '0.5rem' }}>
 
-                                                    {/* PROTOCOLO */}
-                                                    <div className="detail-section">
-                                                        <h5>Protocolo <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>(editable)</span></h5>
-                                                        <div className="editable-field">
-                                                            <label>Personaliza:</label>
-                                                            <input type="text" value={result.evaluation.protocolo.personaliza || 0}
-                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'personaliza', e.target.value, 5)}
-                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
-                                                            <span>/5</span>
-                                                        </div>
-                                                        <div className="editable-field">
-                                                            <label>Tiempos:</label>
-                                                            <input type="text" value={result.evaluation.protocolo.tiempos_respuesta || 0}
-                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'tiempos_respuesta', e.target.value, 5)}
-                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
-                                                            <span>/5</span>
-                                                        </div>
-                                                        <div className="editable-field">
-                                                            <label>Espera:</label>
-                                                            <input type="text" value={result.evaluation.protocolo.tiempo_espera || 0}
-                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'tiempo_espera', e.target.value, 7)}
-                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
-                                                            <span>/7</span>
-                                                        </div>
-                                                        <div className="editable-field">
-                                                            <label>Valida datos:</label>
-                                                            <input type="text" value={result.evaluation.protocolo.valida_datos || 0}
-                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'valida_datos', e.target.value, 5)}
-                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
-                                                            <span>/5</span>
-                                                        </div>
-                                                        <div className="editable-field">
-                                                            <label>Toma pedido:</label>
-                                                            <input type="text" value={result.evaluation.protocolo.toma_pedido || 0}
-                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'toma_pedido', e.target.value, 9)}
-                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
-                                                            <span>/9</span>
-                                                        </div>
-                                                        <div className="editable-field">
-                                                            <label>Adicionales:</label>
-                                                            <input type="text" value={result.evaluation.protocolo.ofrece_adicionales || 0}
-                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'ofrece_adicionales', e.target.value, 8)}
-                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
-                                                            <span>/8</span>
-                                                        </div>
-                                                        <div className="editable-field">
-                                                            <label>Confirma orden:</label>
-                                                            <input type="text" value={result.evaluation.protocolo.confirma_orden || 0}
-                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'confirma_orden', e.target.value, 7)}
-                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
-                                                            <span>/7</span>
-                                                        </div>
-                                                        <div className="editable-field">
-                                                            <label>Link pago:</label>
-                                                            <input type="text" value={result.evaluation.protocolo.link_pago || 0}
-                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'link_pago', e.target.value, 7)}
-                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
-                                                            <span>/7</span>
-                                                        </div>
-                                                        <div className="editable-field">
-                                                            <label>Ayuda adicional:</label>
-                                                            <input type="text" value={result.evaluation.protocolo.ayuda_adicional || 0}
-                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'ayuda_adicional', e.target.value, 4)}
-                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
-                                                            <span>/4</span>
-                                                        </div>
-                                                        <div className="editable-field">
-                                                            <label>Sin silencios:</label>
-                                                            <input type="text" value={result.evaluation.protocolo.sin_silencios || 0}
-                                                                onChange={(e) => handleEditField(idx, 'protocolo', 'sin_silencios', e.target.value, 3)}
-                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
-                                                            <span>/3</span>
-                                                        </div>
-                                                        <p style={{ marginTop: '0.5rem', fontWeight: 'bold' }}>Total: {result.evaluation.protocolo.total}/60</p>
-                                                    </div>
-
-                                                    {/* CALIDAD */}
-                                                    <div className="detail-section">
-                                                        <h5>Calidad <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>(editable)</span></h5>
-                                                        <div className="editable-field">
-                                                            <label>Dominio y seguridad:</label>
-                                                            <input type="text" value={result.evaluation.calidad.dominio_seguridad || 0}
-                                                                onChange={(e) => handleEditField(idx, 'calidad', 'dominio_seguridad', e.target.value, 3)}
-                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
-                                                            <span>/3</span>
-                                                        </div>
-                                                        <div className="editable-field">
-                                                            <label>Redacción clara:</label>
-                                                            <input type="text" value={result.evaluation.calidad.redaccion_clara || 0}
-                                                                onChange={(e) => handleEditField(idx, 'calidad', 'redaccion_clara', e.target.value, 3)}
-                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
-                                                            <span>/3</span>
-                                                        </div>
-                                                        <div className="editable-field">
-                                                            <label>Empatía y cortesía:</label>
-                                                            <input type="text" value={result.evaluation.calidad.empatia_cortesia || 0}
-                                                                onChange={(e) => handleEditField(idx, 'calidad', 'empatia_cortesia', e.target.value, 4)}
-                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
-                                                            <span>/4</span>
-                                                        </div>
-                                                        <p style={{ marginTop: '0.5rem', fontWeight: 'bold' }}>Total: {result.evaluation.calidad.total}/10</p>
-                                                    </div>
-
-                                                    {/* REGISTRO */}
-                                                    <div className="detail-section">
-                                                        <h5>Registro <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>(editable)</span></h5>
-                                                        <div className="editable-field">
-                                                            <label>Confirmó datos:</label>
-                                                            <input type="text" value={result.evaluation.registro.confirma_datos || 0}
-                                                                onChange={(e) => handleEditField(idx, 'registro', 'confirma_datos', e.target.value, 5)}
-                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()} />
-                                                            <span>/5</span>
-                                                        </div>
-                                                        <div className="editable-field" style={{ background: 'var(--warning-bg)', padding: '0.5rem', borderRadius: '6px', marginTop: '0.5rem' }}>
-                                                            <label style={{ color: 'var(--warning-color)' }}>⚠️ Etiquetas:</label>
-                                                            <input type="text" value={result.evaluation.registro.etiquetas || 0}
-                                                                onChange={(e) => handleEditField(idx, 'registro', 'etiquetas', e.target.value, 5)}
-                                                                className="form-input score-input" onClick={(e) => e.stopPropagation()}
-                                                                style={{ borderColor: 'var(--warning-color)' }} />
-                                                            <span>/5</span>
-                                                        </div>
-                                                        <p style={{ marginTop: '0.5rem', fontWeight: 'bold' }}>Total: {result.evaluation.registro.total}/10</p>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                        </tr>
+                    {/* STATUS BAR */}
+                    <motion.div
+                        initial={{ opacity: 0, y: -20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="glass-card status-bar"
+                        style={{ padding: '1rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+                            {isLoadingChats && !useMultipleIds ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--warning)' }}>
+                                    <Loader size={16} className="animate-spin" />
+                                    <span>Sincronizando chats...</span>
+                                </div>
+                            ) : (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <div style={{
+                                        width: '8px', height: '8px', borderRadius: '50%',
+                                        background: localChats.length > 0 ? 'var(--success)' : 'var(--danger)',
+                                        boxShadow: `0 0 10px ${localChats.length > 0 ? 'var(--success)' : 'var(--danger)'}`
+                                    }} />
+                                    <span>{localChats.length} Chats disponibles</span>
+                                    {selectedManager && managerDialogCount !== null && (
+                                        <span className="badge" style={{ background: 'var(--glass-bg-hover)', padding: '0.2rem 0.6rem', borderRadius: '4px', fontSize: '0.85rem' }}>
+                                            {managerDialogCount} de {KNOWN_MANAGERS.find(m => m.email === selectedManager)?.name.split(' ')[0]}
+                                        </span>
                                     )}
-                                </React.Fragment>
-                            ))}
-                            {averages && (
-                                <tr className="average-row">
-                                    <td><strong>Promedio</strong></td>
-                                    <td></td>
-                                    <td><strong>{averages.scripts}</strong></td>
-                                    <td><strong>{averages.protocolo}</strong></td>
-                                    <td><strong>{averages.calidad}</strong></td>
-                                    <td><strong>{averages.registro}</strong></td>
-                                    <td className="total-cell"><strong>{averages.total}</strong></td>
-                                    <td></td>
-                                </tr>
+                                </div>
                             )}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+                        </div>
+                        <button onClick={loadDialogsForDateRange} className="btn-icon" title="Refrescar">
+                            <RefreshCw size={18} className={isLoadingChats ? 'animate-spin' : ''} />
+                        </button>
+                    </motion.div>
 
-            {/* Chat Modal */}
-            {modalChat && (
-                <div className="modal-overlay" onClick={() => setModalChat(null)}>
-                    <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-                        <div className="modal-header">
-                            <h3>Chat - Diálogo #{modalChat.dialogId}</h3>
-                            <button className="btn-icon" onClick={() => setModalChat(null)}>
-                                <X size={20} />
-                            </button>
-                        </div>
-                        <div className="modal-body">
-                            {modalChat.messages && [...modalChat.messages]
-                                .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-                                .map((msg, idx) => {
-                                    const isFromCustomer = msg.from?.type === 'customer';
-                                    const managerName = KNOWN_MANAGERS.find(m => m.email === selectedManager)?.name || 'Gestor';
-                                    const senderLabel = isFromCustomer ? 'Cliente' : (msg.from?.type === 'bot' ? 'Bot' : managerName);
-                                    return (
-                                        <div
-                                            key={idx}
-                                            className={`modal-message ${isFromCustomer ? 'received' : 'sent'}`}
-                                        >
-                                            <div className="message-sender">
-                                                {senderLabel}
-                                            </div>
-                                            <div className="message-text">
-                                                {msg.type === 'image' && msg.items ? (
-                                                    msg.items.map((item, imgIdx) => (
-                                                        <a
-                                                            key={imgIdx}
-                                                            href={item.preview_url}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            style={{ display: 'block', marginTop: imgIdx > 0 ? '0.5rem' : 0 }}
-                                                        >
-                                                            <img
-                                                                src={item.preview_url}
-                                                                alt="Imagen"
-                                                                style={{
-                                                                    maxWidth: '100%',
-                                                                    maxHeight: '200px',
-                                                                    borderRadius: 'var(--radius-sm)',
-                                                                    cursor: 'pointer'
-                                                                }}
-                                                                onError={(e) => {
-                                                                    e.target.style.display = 'none';
-                                                                    e.target.parentElement.innerHTML = '<span style="color: var(--text-muted)">[Imagen no disponible]</span>';
-                                                                }}
-                                                            />
-                                                        </a>
-                                                    ))
-                                                ) : (
-                                                    msg.content || '[media]'
-                                                )}
-                                            </div>
-                                            <div className="message-time">
-                                                {new Date(msg.created_at).toLocaleString()}
-                                            </div>
+                    {/* RESULTS AREA */}
+                    <AnimatePresence mode="wait">
+                        {results.length > 0 ? (
+                            <motion.div
+                                key="results"
+                                variants={containerVariants}
+                                initial="hidden"
+                                animate="visible"
+                                exit={{ opacity: 0 }}
+                                style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}
+                            >
+                                {/* STATS ROW */}
+                                {averages && (
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                                        <StatCard title="Promedio Total" value={averages.total} color="var(--violet)" delay={0.1} />
+                                        <StatCard title="Protocolo" value={averages.protocolo} color="var(--coral)" delay={0.2} />
+                                        <StatCard title="Scripts" value={averages.scripts} color="var(--success)" delay={0.3} />
+                                        <StatCard title="Calidad" value={averages.calidad} color="var(--warning)" delay={0.4} />
+                                    </div>
+                                )}
+
+                                {/* VIEW TOGGLE TOOLBAR */}
+                                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '1rem' }}>
+
+                                    {/* Manager Name Input for Manual IDs - Placed here for visibility */}
+                                    {useMultipleIds && (
+                                        <div style={{ marginRight: 'auto' }}>
+                                            <input
+                                                type="text"
+                                                value={managerNameForList}
+                                                onChange={(e) => setManagerNameForList(e.target.value)}
+                                                placeholder="Nombre del Gestor..."
+                                                className="form-input"
+                                                style={{
+                                                    padding: '0.6rem',
+                                                    width: '250px',
+                                                    background: 'var(--bg-secondary)',
+                                                    border: '1px solid var(--border-color)',
+                                                    color: 'var(--text-primary)'
+                                                }}
+                                            />
                                         </div>
-                                    );
-                                })}
-                        </div>
-                    </div>
+                                    )}
+
+                                    <div className="toggle-group glass-effect" style={{ padding: '0.3rem', borderRadius: '12px', display: 'flex', gap: '0.5rem' }}>
+                                        <button
+                                            onClick={() => setViewMode('radar')}
+                                            style={{
+                                                padding: '0.6rem 1.2rem', borderRadius: '8px', border: 'none',
+                                                background: viewMode === 'radar' ? 'var(--coral)' : 'transparent',
+                                                color: viewMode === 'radar' ? '#fff' : 'var(--text-secondary)',
+                                                fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.3s ease',
+                                                display: 'flex', alignItems: 'center', gap: '0.5rem'
+                                            }}
+                                        >
+                                            <BarChart3 size={16} /> Radar View
+                                        </button>
+                                        <button
+                                            onClick={() => setViewMode('table')}
+                                            style={{
+                                                padding: '0.6rem 1.2rem', borderRadius: '8px', border: 'none',
+                                                background: viewMode === 'table' ? 'var(--violet)' : 'transparent',
+                                                color: viewMode === 'table' ? '#fff' : 'var(--text-secondary)',
+                                                fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.3s ease',
+                                                display: 'flex', alignItems: 'center', gap: '0.5rem'
+                                            }}
+                                        >
+                                            <FileText size={16} /> Table Editor
+                                        </button>
+                                    </div>
+
+                                    <button
+                                        onClick={() => exportEvaluationsToExcel(results, selectedManager && !useMultipleIds ? selectedManager : managerNameForList)}
+                                        className="btn btn-secondary"
+                                        title="Exportar a Excel"
+                                        style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}
+                                    >
+                                        <Download size={16} /> Excel
+                                    </button>
+                                </div>
+
+                                {/* DYNAMIC CONTENT AREA */}
+                                <AnimatePresence mode="wait">
+                                    {viewMode === 'radar' ? (
+                                        <motion.div
+                                            key="radar-view"
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -10 }}
+                                            transition={{ duration: 0.3 }}
+                                            style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}
+                                        >
+                                            {/* MAIN RADAR */}
+                                            <div className="glass-card" style={{ padding: '2rem', height: '400px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                                                <h3 style={{ marginBottom: '1rem' }}>Promedio General de Competencias</h3>
+                                                <ResponsiveContainer width="100%" height="100%">
+                                                    <RadarChart data={[
+                                                        { category: 'Scripts', A: parseFloat(averages?.scripts || 0), fullMark: 100 },
+                                                        { category: 'Protocolo', A: (parseFloat(averages?.protocolo || 0) / 60) * 100, fullMark: 100 },
+                                                        { category: 'Calidad', A: (parseFloat(averages?.calidad || 0) / 10) * 100, fullMark: 100 },
+                                                        { category: 'Registro', A: (parseFloat(averages?.registro || 0) / 10) * 100, fullMark: 100 }
+                                                    ]}>
+                                                        <PolarGrid stroke="var(--border-color)" />
+                                                        <PolarAngleAxis dataKey="category" tick={{ fill: 'var(--text-secondary)', fontSize: 14, fontWeight: 'bold' }} />
+                                                        <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
+                                                        <Radar name="Promedio" dataKey="A" stroke="var(--coral)" fill="var(--coral)" fillOpacity={0.5} />
+                                                        <Tooltip
+                                                            contentStyle={{ background: 'rgba(0,0,0,0.8)', border: 'none', borderRadius: '8px', color: '#fff' }}
+                                                            itemStyle={{ color: '#fff' }}
+                                                        />
+                                                    </RadarChart>
+                                                </ResponsiveContainer>
+                                            </div>
+
+                                            {/* MINI RADARS GRID */}
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.5rem' }}>
+                                                {results.map((res, idx) => !res.error && (
+                                                    <motion.div
+                                                        key={`mini-radar-${idx}`}
+                                                        className="glass-card"
+                                                        whileHover={{ y: -5, boxShadow: '0 10px 30px -10px rgba(0,0,0,0.3)' }}
+                                                        style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}
+                                                    >
+                                                        <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                                <span className="badge" style={{ background: 'var(--bg-tertiary)' }}>#{idx + 1}</span>
+                                                                <span style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>Chat {res.dialogId}</span>
+                                                            </div>
+                                                            <ScoreBadge score={res.evaluation.promedio_final} max={100} />
+                                                        </div>
+                                                        <div style={{ width: '100%', marginBottom: '1rem' }}>
+                                                            <MiniRadarChart data={res.evaluation} />
+                                                        </div>
+                                                        <button
+                                                            className="btn btn-secondary"
+                                                            style={{ width: '100%', fontSize: '0.8rem', justifyContent: 'center' }}
+                                                            onClick={() => setModalChat(res)}
+                                                        >
+                                                            <Eye size={14} /> Ver Conversación
+                                                        </button>
+                                                    </motion.div>
+                                                ))}
+                                            </div>
+                                        </motion.div>
+                                    ) : (
+                                        <motion.div
+                                            key="table-view"
+                                            initial={{ opacity: 0, x: -20 }}
+                                            animate={{ opacity: 1, x: 0 }}
+                                            exit={{ opacity: 0, x: 20 }}
+                                            transition={{ duration: 0.3 }}
+                                            className="glass-card"
+                                            style={{ padding: '1.5rem' }}
+                                        >
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
+                                                <h3>Edición Detallada</h3>
+                                                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Edita los valores directamente para recalcular el promedio.</span>
+                                            </div>
+                                            <ResultsTable
+                                                results={results}
+                                                onEdit={handleEditField}
+                                                onView={setModalChat}
+                                                onReload={handleReEvaluate}
+                                                expandedRow={expandedChat}
+                                                setExpandedRow={setExpandedChat}
+                                            />
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </motion.div>
+                        ) : (
+                            <motion.div
+                                variants={itemVariants}
+                                initial="hidden" animate="visible"
+                                className="empty-state"
+                                style={{
+                                    height: '100%', display: 'flex', flexDirection: 'column',
+                                    alignItems: 'center', justifyContent: 'center', opacity: 0.5,
+                                    gap: '1rem'
+                                }}
+                            >
+                                <BarChart3 size={64} strokeWidth={1} style={{ opacity: 0.2 }} />
+                                <p>Configura los parámetros y presiona "Iniciar Evaluación"</p>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
-            )}
-        </div>
+            </div>
+
+            {/* FULL SCREEN MODAL FOR CHAT */}
+            <AnimatePresence>
+                {modalChat && (
+                    <motion.div
+                        className="modal-overlay"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        onClick={() => setModalChat(null)}
+                        style={{
+                            position: 'fixed', inset: 0, zIndex: 1000,
+                            background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(5px)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem'
+                        }}
+                    >
+                        <motion.div
+                            className="glass-card"
+                            initial={{ scale: 0.9, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0.9, y: 20 }}
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ width: '100%', maxWidth: '800px', height: '85vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)' }}
+                        >
+                            <div className="modal-header" style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <h3>Chat #{modalChat.dialogId}</h3>
+                                <button className="btn-icon" onClick={() => setModalChat(null)}><X size={20} /></button>
+                            </div>
+                            <div className="modal-body" style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
+                                {modalChat.messages && [...modalChat.messages]
+                                    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+                                    .map((msg, idx) => {
+                                        const isFromCustomer = msg.from?.type === 'customer';
+                                        return (
+                                            <div key={idx} className={`message ${isFromCustomer ? 'received' : 'sent'}`} style={{ marginBottom: '1rem', maxWidth: '80%', marginLeft: isFromCustomer ? 0 : 'auto', marginRight: isFromCustomer ? 'auto' : 0 }}>
+                                                <div className="message-text">{msg.content || '[Media]'}</div>
+                                                <div className="message-meta" style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '0.2rem' }}>{new Date(msg.created_at).toLocaleString()}</div>
+                                            </div>
+                                        );
+                                    })}
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </motion.div>
     );
 };
 
