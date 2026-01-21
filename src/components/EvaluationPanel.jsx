@@ -50,25 +50,57 @@ const itemVariants = {
 
 /* --- SUB-COMPONENTS --- */
 
-const StatCard = ({ title, value, icon: Icon, color, delay }) => (
+const StatCard = ({ title, value, icon: Icon, color, delay, featured = false }) => (
     <motion.div
         variants={itemVariants}
-        className="glass-card stat-card"
+        className={`stat-card ${!featured ? 'glass-card' : ''}`}
         style={{
             padding: '1.5rem',
             display: 'flex',
             flexDirection: 'column',
             gap: '0.5rem',
-            borderLeft: `4px solid ${color}`
+            // Featured styles
+            background: featured ? `linear-gradient(135deg, ${color} 0%, ${color}dd 100%)` : undefined,
+            borderLeft: featured ? 'none' : `4px solid ${color}`,
+            borderRadius: '16px',
+            boxShadow: featured ? `0 10px 25px -5px ${color}66` : undefined,
+            transform: featured ? 'scale(1.05)' : 'none',
+            zIndex: featured ? 10 : 1,
+            position: 'relative'
         }}
     >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: 'var(--text-secondary)' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, textTransform: 'uppercase' }}>{title}</span>
-            {Icon && <Icon size={18} style={{ opacity: 0.7 }} />}
+        <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            color: featured ? 'rgba(255,255,255,0.9)' : 'var(--text-secondary)'
+        }}>
+            <span style={{
+                fontSize: featured ? '0.95rem' : '0.85rem',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: featured ? '0.5px' : '0px'
+            }}>{title}</span>
+            {Icon && <Icon size={featured ? 22 : 18} style={{ opacity: 0.7 }} />}
         </div>
-        <div style={{ fontSize: '2rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+        <div style={{
+            fontSize: featured ? '3rem' : '2rem',
+            fontWeight: 800,
+            color: featured ? '#fff' : 'var(--text-primary)',
+            lineHeight: 1,
+            marginTop: featured ? '0.5rem' : '0'
+        }}>
             {value}
         </div>
+        {featured && (
+            <div style={{
+                position: 'absolute',
+                top: 0, left: 0, right: 0, bottom: 0,
+                background: 'linear-gradient(to bottom right, rgba(255,255,255,0.2), transparent)',
+                borderRadius: '16px',
+                pointerEvents: 'none'
+            }} />
+        )}
     </motion.div>
 );
 
@@ -94,10 +126,10 @@ const ScoreBadge = ({ score, max = 100 }) => {
 
 const MiniRadarChart = ({ data }) => {
     const chartData = [
-        { category: 'Scripts', A: data.scripts.total, fullMark: 20 },
-        { category: 'Protocolo', A: (data.protocolo.total / 60) * 20, fullMark: 20 },
-        { category: 'Calidad', A: (data.calidad.total / 10) * 20, fullMark: 20 },
-        { category: 'Registro', A: (data.registro.total / 10) * 20, fullMark: 20 }
+        { category: 'Scripts', A: data.scripts.total !== null ? data.scripts.total : 0, fullMark: 20 },
+        { category: 'Protocolo', A: data.protocolo.total !== null ? (data.protocolo.total / 60) * 20 : 0, fullMark: 20 },
+        { category: 'Calidad', A: data.calidad.total !== null ? (data.calidad.total / 10) * 20 : 0, fullMark: 20 },
+        { category: 'Registro', A: data.registro.total !== null ? (data.registro.total / 10) * 20 : 0, fullMark: 20 }
     ];
 
     return (
@@ -202,16 +234,52 @@ const ResultsTable = ({ results, onEdit, onView, onReload, expandedRow, setExpan
                             <td style={{ padding: '1rem' }}>#{idx + 1}</td>
                             <td style={{ padding: '1rem', fontFamily: 'monospace' }}>{res.dialogId}</td>
                             <td style={{ padding: '1rem', textAlign: 'center' }}>
-                                <div style={{ fontWeight: 'bold' }}>{res.evaluation?.scripts?.total || 0}</div>
+                                <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}>
+                                    {res.evaluation?.scripts?.total === null ? (
+                                        <>
+                                            <span style={{ color: 'var(--warning)' }}>?</span>
+                                            <AlertCircle size={14} color="var(--warning)" title="Requiere revisión manual" />
+                                        </>
+                                    ) : (
+                                        res.evaluation?.scripts?.total || 0
+                                    )}
+                                </div>
                             </td>
                             <td style={{ padding: '1rem', textAlign: 'center' }}>
-                                <div style={{ fontWeight: 'bold' }}>{res.evaluation?.protocolo?.total || 0}</div>
+                                <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}>
+                                    {res.evaluation?.protocolo?.total === null ? (
+                                        <>
+                                            <span style={{ color: 'var(--warning)' }}>?</span>
+                                            <AlertCircle size={14} color="var(--warning)" title="Requiere revisión manual" />
+                                        </>
+                                    ) : (
+                                        res.evaluation?.protocolo?.total || 0
+                                    )}
+                                </div>
                             </td>
                             <td style={{ padding: '1rem', textAlign: 'center' }}>
-                                <div style={{ fontWeight: 'bold' }}>{res.evaluation?.calidad?.total || 0}</div>
+                                <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}>
+                                    {res.evaluation?.calidad?.total === null ? (
+                                        <>
+                                            <span style={{ color: 'var(--warning)' }}>?</span>
+                                            <AlertCircle size={14} color="var(--warning)" title="Requiere revisión manual" />
+                                        </>
+                                    ) : (
+                                        res.evaluation?.calidad?.total || 0
+                                    )}
+                                </div>
                             </td>
                             <td style={{ padding: '1rem', textAlign: 'center' }}>
-                                <div style={{ fontWeight: 'bold' }}>{res.evaluation?.registro?.total || 0}</div>
+                                <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}>
+                                    {res.evaluation?.registro?.total === null ? (
+                                        <>
+                                            <span style={{ color: 'var(--warning)' }}>?</span>
+                                            <AlertCircle size={14} color="var(--warning)" title="Requiere revisión manual" />
+                                        </>
+                                    ) : (
+                                        res.evaluation?.registro?.total || 0
+                                    )}
+                                </div>
                             </td>
                             <td style={{ padding: '1rem', fontWeight: 'bold', color: res.evaluation?.promedio_final >= 90 ? 'var(--success)' : res.evaluation?.promedio_final >= 70 ? 'var(--warning)' : 'var(--danger)' }}>
                                 {res.evaluation?.promedio_final || 0}
@@ -236,37 +304,45 @@ const ResultsTable = ({ results, onEdit, onView, onReload, expandedRow, setExpan
                                                     <h4 style={{ fontSize: '0.8rem', color: 'var(--coral)', textTransform: 'uppercase', marginBottom: '0.3rem' }}>
                                                         {schema.label} (editable)
                                                     </h4>
-                                                    {schema.fields.map(field => (
-                                                        <div key={field.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem' }}>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                                                                <span style={{ color: 'var(--text-secondary)' }}>{field.label}:</span>
-                                                                {key === 'registro' && (
-                                                                    <div title="Verificar manualmente">
-                                                                        <AlertTriangle size={12} color="var(--warning)" />
-                                                                    </div>
-                                                                )}
+                                                    {schema.fields.map(field => {
+                                                        const fieldValue = res.evaluation?.[key]?.[field.key];
+                                                        const isNull = fieldValue === null || fieldValue === undefined;
+
+                                                        return (
+                                                            <div key={field.key} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.8rem' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                                                    <span style={{ color: 'var(--text-secondary)' }}>{field.label}:</span>
+                                                                    {/* Show warning icon for null values or for 'registro' */}
+                                                                    {(isNull || key === 'registro') && (
+                                                                        <div title={isNull ? "Sin evidencia - Requiere revisión manual" : "Verificar manualmente"}>
+                                                                            <AlertTriangle size={12} color="var(--warning)" />
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                                                    <input
+                                                                        type="number"
+                                                                        min="0"
+                                                                        max={field.max}
+                                                                        value={isNull ? '' : fieldValue}
+                                                                        placeholder={isNull ? "?" : ""}
+                                                                        onChange={(e) => onEdit(idx, key, field.key, e.target.value, field.max)}
+                                                                        className="form-input"
+                                                                        style={{
+                                                                            width: '45px',
+                                                                            padding: '0.2rem',
+                                                                            textAlign: 'center',
+                                                                            fontSize: '0.8rem',
+                                                                            borderColor: (isNull || key === 'registro') ? 'var(--warning)' : 'var(--border-color)',
+                                                                            background: (isNull || key === 'registro') ? 'rgba(255, 193, 7, 0.1)' : 'var(--bg-primary)',
+                                                                            borderWidth: isNull ? '2px' : '1px'
+                                                                        }}
+                                                                    />
+                                                                    <span style={{ fontSize: '0.7rem', opacity: 0.5 }}>/{field.max}</span>
+                                                                </div>
                                                             </div>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                                                                <input
-                                                                    type="number"
-                                                                    min="0"
-                                                                    max={field.max}
-                                                                    value={res.evaluation?.[key]?.[field.key] || 0}
-                                                                    onChange={(e) => onEdit(idx, key, field.key, e.target.value, field.max)}
-                                                                    className="form-input"
-                                                                    style={{
-                                                                        width: '45px',
-                                                                        padding: '0.2rem',
-                                                                        textAlign: 'center',
-                                                                        fontSize: '0.8rem',
-                                                                        borderColor: key === 'registro' ? 'var(--warning)' : 'var(--border-color)',
-                                                                        background: key === 'registro' ? 'rgba(255, 193, 7, 0.1)' : 'var(--bg-primary)'
-                                                                    }}
-                                                                />
-                                                                <span style={{ fontSize: '0.7rem', opacity: 0.5 }}>/{field.max}</span>
-                                                            </div>
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                     <div style={{ marginTop: '0.5rem', paddingTop: '0.5rem', borderTop: '1px dashed var(--border-color)', display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '0.85rem' }}>
                                                         <span>Total {schema.label}:</span>
                                                         <span>{res.evaluation?.[key]?.total || 0}/{schema.max}</span>
@@ -976,7 +1052,8 @@ const EvaluationPanel = ({ client }) => {
 
     // Function to edit evaluation field values manually
     const handleEditField = (resultIndex, section, field, newValue, maxValue) => {
-        const numValue = Math.min(Math.max(0, parseInt(newValue) || 0), maxValue);
+        // Allow empty string to reset to null, otherwise parse to number
+        const numValue = newValue === '' ? null : Math.min(Math.max(0, parseInt(newValue) || 0), maxValue);
 
         const updatedResults = [...results];
         const result = { ...updatedResults[resultIndex] };
@@ -985,21 +1062,33 @@ const EvaluationPanel = ({ client }) => {
         // Update the specific field
         evaluation[section] = { ...evaluation[section], [field]: numValue };
 
-        // Recalculate section total
+        // Recalculate section total - EXCLUDE null values
         let sectionTotal = 0;
+        let hasNullFields = false;
         Object.keys(evaluation[section]).forEach(key => {
             if (key !== 'total') {
-                sectionTotal += evaluation[section][key] || 0;
+                const value = evaluation[section][key];
+                if (value === null || value === undefined) {
+                    hasNullFields = true;
+                } else {
+                    sectionTotal += value || 0;
+                }
             }
         });
-        evaluation[section].total = sectionTotal;
 
-        // Recalculate overall total
-        evaluation.promedio_final =
-            (evaluation.scripts?.total || 0) +
-            (evaluation.protocolo?.total || 0) +
-            (evaluation.calidad?.total || 0) +
-            (evaluation.registro?.total || 0);
+        // If all fields are null, total is null; otherwise it's the sum of non-null values
+        evaluation[section].total = hasNullFields && sectionTotal === 0 ? null : sectionTotal;
+
+        // Recalculate overall total - EXCLUDE null section totals
+        let overallTotal = 0;
+        ['scripts', 'protocolo', 'calidad', 'registro'].forEach(sec => {
+            const secTotal = evaluation[sec]?.total;
+            if (secTotal !== null && secTotal !== undefined) {
+                overallTotal += secTotal;
+            }
+        });
+
+        evaluation.promedio_final = overallTotal;
 
         result.evaluation = evaluation;
         updatedResults[resultIndex] = result;
@@ -1019,21 +1108,44 @@ const EvaluationPanel = ({ client }) => {
             total: 0
         };
 
+        const counts = {
+            scripts: 0,
+            protocolo: 0,
+            calidad: 0,
+            registro: 0,
+            total: 0
+        };
+
         validResults.forEach(r => {
-            sum.scripts += r.evaluation.scripts.total;
-            sum.protocolo += r.evaluation.protocolo.total;
-            sum.calidad += r.evaluation.calidad.total;
-            sum.registro += r.evaluation.registro.total;
-            sum.total += r.evaluation.promedio_final;
+            // Only include non-null values in calculations
+            if (r.evaluation.scripts.total !== null && r.evaluation.scripts.total !== undefined) {
+                sum.scripts += r.evaluation.scripts.total;
+                counts.scripts++;
+            }
+            if (r.evaluation.protocolo.total !== null && r.evaluation.protocolo.total !== undefined) {
+                sum.protocolo += r.evaluation.protocolo.total;
+                counts.protocolo++;
+            }
+            if (r.evaluation.calidad.total !== null && r.evaluation.calidad.total !== undefined) {
+                sum.calidad += r.evaluation.calidad.total;
+                counts.calidad++;
+            }
+            if (r.evaluation.registro.total !== null && r.evaluation.registro.total !== undefined) {
+                sum.registro += r.evaluation.registro.total;
+                counts.registro++;
+            }
+            if (r.evaluation.promedio_final !== null && r.evaluation.promedio_final !== undefined) {
+                sum.total += r.evaluation.promedio_final;
+                counts.total++;
+            }
         });
 
-        const count = validResults.length;
         return {
-            scripts: (sum.scripts / count).toFixed(1),
-            protocolo: (sum.protocolo / count).toFixed(1),
-            calidad: (sum.calidad / count).toFixed(1),
-            registro: (sum.registro / count).toFixed(1),
-            total: (sum.total / count).toFixed(1)
+            scripts: counts.scripts > 0 ? (sum.scripts / counts.scripts).toFixed(1) : '0.0',
+            protocolo: counts.protocolo > 0 ? (sum.protocolo / counts.protocolo).toFixed(1) : '0.0',
+            calidad: counts.calidad > 0 ? (sum.calidad / counts.calidad).toFixed(1) : '0.0',
+            registro: counts.registro > 0 ? (sum.registro / counts.registro).toFixed(1) : '0.0',
+            total: counts.total > 0 ? (sum.total / counts.total).toFixed(1) : '0.0'
         };
     };
 
@@ -1305,7 +1417,7 @@ const EvaluationPanel = ({ client }) => {
                                 {/* STATS ROW */}
                                 {averages && (
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
-                                        <StatCard title="Promedio Total" value={averages.total} color="var(--violet)" delay={0.1} />
+                                        <StatCard title="Promedio Total" value={averages.total} color="var(--violet)" delay={0.1} featured={true} />
                                         <StatCard title="Protocolo" value={averages.protocolo} color="var(--coral)" delay={0.2} />
                                         <StatCard title="Scripts" value={averages.scripts} color="var(--success)" delay={0.3} />
                                         <StatCard title="Calidad" value={averages.calidad} color="var(--warning)" delay={0.4} />
@@ -1512,9 +1624,27 @@ const EvaluationPanel = ({ client }) => {
                                     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
                                     .map((msg, idx) => {
                                         const isFromCustomer = msg.from?.type === 'customer';
+
+                                        // Check for image
+                                        const hasImage = msg.media?.url || msg.file_url || msg.file?.url ||
+                                            (msg.attachments && msg.attachments.length > 0);
+
                                         return (
                                             <div key={idx} className={`message ${isFromCustomer ? 'received' : 'sent'}`} style={{ marginBottom: '1rem', maxWidth: '80%', marginLeft: isFromCustomer ? 0 : 'auto', marginRight: isFromCustomer ? 'auto' : 0 }}>
-                                                <div className="message-text">{msg.content || '[Media]'}</div>
+                                                <div className="message-text">
+                                                    {msg.content || (hasImage ? '📷 Imagen' : '[Media]')}
+                                                    {hasImage && (
+                                                        <span style={{
+                                                            display: 'block',
+                                                            fontSize: '0.75rem',
+                                                            marginTop: '0.3rem',
+                                                            opacity: 0.7,
+                                                            fontStyle: 'italic'
+                                                        }}>
+                                                            💡 Esta imagen fue analizada con OCR
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 <div className="message-meta" style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '0.2rem' }}>{new Date(msg.created_at).toLocaleString()}</div>
                                             </div>
                                         );

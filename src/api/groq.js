@@ -1,3 +1,5 @@
+import { extractTextFromImage, getImageUrlFromMessage } from './imageAnalysis';
+
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
 const EVALUATION_PROMPT = `Eres un evaluador de calidad de atención al cliente para Punto Farma. Analiza el siguiente chat entre un agente y un cliente.
@@ -31,42 +33,43 @@ RÚBRICA DE EVALUACIÓN:
 
 INSTRUCCIONES:
 - Evalúa SOLO lo que puedes observar en el chat
-- Si un criterio no aplica o no hay evidencia, asigna el puntaje completo
+- Si un criterio no aplica o no hay evidencia, asigna null para permitir revisión manual
 - Para "etiquetas", SIEMPRE asigna 0 puntos (se verifica manualmente después)
 - Sé objetivo y consistente
+- Los valores null indican que el criterio requiere validación manual del supervisor
 
-RESPONDE EN FORMATO JSON EXACTO:
+RESPONDE EN FORMATO JSON EXACTO (usa null cuando no hay evidencia):
 {
   "scripts": {
-    "saludo": <0-10>,
-    "despedida": <0-10>,
-    "total": <0-20>
+    "saludo": <0-10 o null>,
+    "despedida": <0-10 o null>,
+    "total": <0-20 o null>
   },
   "protocolo": {
-    "personaliza": <0-5>,
-    "tiempos_respuesta": <0-5>,
-    "tiempo_espera": <0-7>,
-    "valida_datos": <0-5>,
-    "toma_pedido": <0-9>,
-    "ofrece_adicionales": <0-8>,
-    "confirma_orden": <0-7>,
-    "link_pago": <0-7>,
-    "ayuda_adicional": <0-4>,
-    "sin_silencios": <0-3>,
-    "total": <0-60>
+    "personaliza": <0-5 o null>,
+    "tiempos_respuesta": <0-5 o null>,
+    "tiempo_espera": <0-7 o null>,
+    "valida_datos": <0-5 o null>,
+    "toma_pedido": <0-9 o null>,
+    "ofrece_adicionales": <0-8 o null>,
+    "confirma_orden": <0-7 o null>,
+    "link_pago": <0-7 o null>,
+    "ayuda_adicional": <0-4 o null>,
+    "sin_silencios": <0-3 o null>,
+    "total": <0-60 o null>
   },
   "calidad": {
-    "dominio_seguridad": <0-3>,
-    "redaccion_clara": <0-3>,
-    "empatia_cortesia": <0-4>,
-    "total": <0-10>
+    "dominio_seguridad": <0-3 o null>,
+    "redaccion_clara": <0-3 o null>,
+    "empatia_cortesia": <0-4 o null>,
+    "total": <0-10 o null>
   },
   "registro": {
-    "confirma_datos": <0-5>,
+    "confirma_datos": <0-5 o null>,
     "etiquetas": <0-5>,
-    "total": <0-10>
+    "total": <0-10 o null>
   },
-  "promedio_final": <suma de totales>,
+  "promedio_final": <suma de totales, excluyendo valores null>,
   "observaciones": "<máximo 2 sugerencias de mejora importantes>"
 }
 
@@ -88,12 +91,56 @@ export const evaluateChat = async (chatMessages, agentName, dialogTags = []) => 
         throw new Error('Groq API key not configured');
     }
 
-    // Format chat transcript
-    const transcript = chatMessages.map(msg => {
+    // Format chat transcript with OCR for images
+    console.log('🔍 [OCR Debug] Procesando', chatMessages.length, 'mensajes para evaluación...');
+
+    const transcriptPromises = chatMessages.map(async (msg, index) => {
         const sender = msg.from?.type === 'user' ? agentName : 'Cliente';
         const time = new Date(msg.created_at).toLocaleTimeString();
-        return `[${time}] ${sender}: ${msg.content || '[media]'}`;
-    }).join('\n');
+
+        // Check if message has an image
+        const imageUrl = getImageUrlFromMessage(msg);
+
+        if (imageUrl) {
+            console.log(`📸 [OCR Debug] Mensaje #${index + 1}: Imagen detectada!`);
+            console.log(`   └─ URL: ${imageUrl}`);
+            console.log(`   └─ Tiene texto también: ${msg.content ? 'Sí' : 'No'}`);
+        }
+
+        if (imageUrl && !msg.content) {
+            // Message has image but no text - extract text from image
+            console.log('📸 [Evaluación] Imagen detectada en mensaje, extrayendo texto...');
+            const extractedText = await extractTextFromImage(imageUrl, true);
+
+            if (extractedText && extractedText.trim().length > 0) {
+                console.log(`✅ [OCR Debug] Texto extraído exitosamente: "${extractedText.substring(0, 100)}..."`);
+                return `[${time}] ${sender}: [Imagen con texto: "${extractedText}"]`;
+            } else {
+                console.log('⚠️ [OCR Debug] No se pudo extraer texto de la imagen');
+                return `[${time}] ${sender}: [Imagen sin texto legible]`;
+            }
+        } else if (imageUrl && msg.content) {
+            // Message has both image and text
+            const extractedText = await extractTextFromImage(imageUrl, true);
+            if (extractedText && extractedText.trim().length > 0) {
+                console.log(`✅ [OCR Debug] Texto imagen extraído: "${extractedText.substring(0, 100)}..."`);
+                return `[${time}] ${sender}: ${msg.content} [Adjunto imagen: "${extractedText}"]`;
+            } else {
+                return `[${time}] ${sender}: ${msg.content} [Adjunto imagen]`;
+            }
+        } else {
+            // Normal text message
+            return `[${time}] ${sender}: ${msg.content || '[media]'}`;
+        }
+    });
+
+    // Wait for all OCR operations to complete
+    const transcript = (await Promise.all(transcriptPromises)).join('\n');
+
+    console.log('📋 [OCR Debug] Transcript completo que se enviará a la IA:');
+    console.log('─────────────────────────────────────────────────────');
+    console.log(transcript);
+    console.log('─────────────────────────────────────────────────────');
 
     // Build full prompt with tags info
     const fullPrompt = EVALUATION_PROMPT + TAGS_SECTION(dialogTags) + transcript;
