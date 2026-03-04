@@ -79,9 +79,10 @@ export const createClient = (baseUrl, token) => {
     };
 
     // Get dialogs with filters - optimized for date range and user filtering
-    const getDialogs = async ({ since, until, userId, active = false, limit = 100, sinceId, offset } = {}) => {
+    const getDialogs = async ({ id, since, until, userId, active = false, limit = 100, sinceId, offset } = {}) => {
         try {
             const params = { limit };
+            if (id) params.id = id;
             if (since) params.since = since;
             if (until) params.until = until;
             if (userId) params.user_id = userId;
@@ -94,6 +95,18 @@ export const createClient = (baseUrl, token) => {
             return await response.json();
         } catch (error) {
             console.error("Error fetching dialogs:", error);
+            throw error;
+        }
+    };
+
+    // Fetch a single dialog by ID (if endpoint supports /dialogs/:id)
+    const getDialogById = async (dialogId) => {
+        try {
+            const response = await proxyFetch(`/dialogs/${dialogId}`);
+            if (!response.ok) throw new Error(`Error ${response.status}: ${response.statusText}`);
+            return await response.json();
+        } catch (error) {
+            console.error("Error fetching dialog by id:", error);
             throw error;
         }
     };
@@ -117,5 +130,5 @@ export const createClient = (baseUrl, token) => {
         }
     };
 
-    return { getChats, getMessages, getMessagesByDialog, getUsers, getDialogs, getMessagesByUser };
+    return { getChats, getMessages, getMessagesByDialog, getUsers, getDialogs, getDialogById, getMessagesByUser };
 };
