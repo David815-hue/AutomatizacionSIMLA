@@ -48,6 +48,11 @@ const itemVariants = {
     }
 };
 
+const findDialogByIdInList = (dialogs, dialogId) => {
+    if (!Array.isArray(dialogs)) return null;
+    return dialogs.find((d) => String(d?.id) === String(dialogId)) || null;
+};
+
 /* --- SUB-COMPONENTS --- */
 
 const StatCard = ({ title, value, icon: Icon, color, delay, featured = false }) => (
@@ -172,16 +177,15 @@ const EVALUATION_SCHEMA = {
         label: 'Protocolo',
         max: 60,
         fields: [
-            { key: 'personaliza', label: 'Personaliza', max: 5 },
+            { key: 'personaliza', label: 'Personaliza', max: 6 },
             { key: 'tiempos_respuesta', label: 'Tiempos R.', max: 5 },
             { key: 'tiempo_espera', label: 'Espera', max: 7 },
             { key: 'valida_datos', label: 'Valida Datos', max: 5 },
             { key: 'toma_pedido', label: 'Toma Pedido', max: 9 },
             { key: 'ofrece_adicionales', label: 'Adicionales', max: 8 },
             { key: 'confirma_orden', label: 'Confirma', max: 7 },
-            { key: 'link_pago', label: 'Link Pago', max: 7 },
-            { key: 'ayuda_adicional', label: 'Ayuda', max: 4 },
-            { key: 'sin_silencios', label: 'Sin Silencios', max: 3 }
+            { key: 'link_pago', label: 'Link Pago', max: 8 },
+            { key: 'ayuda_adicional', label: 'Ayuda', max: 5 }
         ]
     },
     calidad: {
@@ -841,10 +845,16 @@ const EvaluationPanel = ({ client }) => {
             setProgress({ current: i + 1, total: ids.length });
 
             try {
-                // Fetch dialog details first
-                const dialogDetails = await client.getDialogs({ id: dialogId, limit: 1 });
+                // Fetch dialog details first (prefer direct endpoint, fallback to list+find)
+                let dialog = null;
+                try {
+                    dialog = await client.getDialogById(dialogId);
+                } catch {
+                    const dialogDetails = await client.getDialogs({ id: dialogId, limit: 100 });
+                    dialog = findDialogByIdInList(dialogDetails, dialogId);
+                }
 
-                if (!dialogDetails || dialogDetails.length === 0) {
+                if (!dialog) {
                     evaluationResults.push({
                         chatId: dialogId,
                         dialogId: dialogId,
@@ -854,7 +864,6 @@ const EvaluationPanel = ({ client }) => {
                     continue;
                 }
 
-                const dialog = dialogDetails[0];
 
                 // Apply closed-only filter
                 if (onlyClosedDialogs && !dialog.closed_at) {
@@ -945,15 +954,33 @@ const EvaluationPanel = ({ client }) => {
                 }
 
                 // Fetch the specific dialog to get tags (API may not return them due to Simla limitation)
-                const dialogDetails = await client.getDialogs({ id: parseInt(dialogId), limit: 1 });
-                const dialogTags = (dialogDetails && dialogDetails[0]) ? dialogDetails[0].tags || [] : [];
+                let dialogDetails = null;
+                let dialogPayload = null;
+                try {
+                    dialogPayload = await client.getDialogById(parseInt(dialogId));
+                } catch {
+                    dialogDetails = await client.getDialogs({ id: parseInt(dialogId), limit: 100 });
+                    dialogPayload = findDialogByIdInList(dialogDetails, parseInt(dialogId));
+                }
+                const dialogTags = dialogPayload?.tags || [];
 
                 // Create a minimal chat object with tags from dialog
                 chat = {
-                    id: parseInt(dialogId),
+                    id: dialogPayload?.chat_id || parseInt(dialogId),
                     tags: dialogTags,
-                    last_dialog: { id: parseInt(dialogId) }
+                    last_dialog: {
+                        id: parseInt(dialogId),
+                        responsible: dialogPayload?.responsible
+                    }
                 };
+
+                console.group(`[Manual Dialog Debug] Dialog ${dialogId}`);
+                console.log('Dialog details raw response:', dialogDetails);
+                console.log('Dialog payload used:', dialogPayload);
+                console.log('Tags extracted:', dialogTags);
+                console.log('Tags count:', dialogTags.length);
+                console.log('Chat object sent to evaluation:', chat);
+                console.groupEnd();
 
                 const evaluationResults = await evaluateMultipleChats(
                     [{ chat, messages: Array.isArray(messages) ? messages : [] }],
@@ -981,6 +1008,12 @@ const EvaluationPanel = ({ client }) => {
             const managerName = chat.last_dialog?.responsible?.name ||
                 chat.last_dialog?.responsible?.first_name ||
                 'Gestor';
+
+            console.group(`[Manual Dialog Debug] Dialog ${chat.last_dialog?.id || chat.id}`);
+            console.log('Chat found in memory/localChats:', chat);
+            console.log('Tags from in-memory chat:', chat.tags || []);
+            console.log('Tags count:', (chat.tags || []).length);
+            console.groupEnd();
 
             const evaluationResults = await evaluateMultipleChats(
                 [{ chat, messages: Array.isArray(messages) ? messages : [] }],
@@ -1659,3 +1692,5 @@ const EvaluationPanel = ({ client }) => {
 };
 
 export default EvaluationPanel;
+
+

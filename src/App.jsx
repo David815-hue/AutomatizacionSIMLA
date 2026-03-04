@@ -1,67 +1,64 @@
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, useState } from 'react';
 import { ThemeProvider } from './context/ThemeContext';
 import Login from './components/Login';
 import Sidebar from './components/Sidebar';
 import ChatView from './components/ChatView';
-import EvaluationPanel from './components/EvaluationPanel';
 import MainSelection from './components/MainSelection';
 import { createClient } from './api/simla';
 import { useChats, useMessages, useManagers } from './hooks/useSimlaData';
 
+const EvaluationPanel = React.lazy(() => import('./components/EvaluationPanel'));
+
+const resolveInitialCredentials = () => {
+  const envEndpoint = import.meta.env.VITE_ENDPOINT_URL;
+  const envToken = import.meta.env.VITE_TOKEN;
+
+  if (envEndpoint && envToken) {
+    return { baseUrl: envEndpoint.replace(/\/$/, ''), token: envToken };
+  }
+
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const savedEndpoint = localStorage.getItem('simla_endpoint');
+  const savedToken = localStorage.getItem('simla_token');
+
+  if (savedEndpoint && savedToken) {
+    return { baseUrl: savedEndpoint.replace(/\/$/, ''), token: savedToken };
+  }
+
+  return null;
+};
+
 function App() {
-  const [credentials, setCredentials] = useState(null);
-  const [client, setClient] = useState(null);
+  const [credentials, setCredentials] = useState(resolveInitialCredentials);
+  const [client, setClient] = useState(() =>
+    credentials ? createClient(credentials.baseUrl, credentials.token) : null
+  );
+
   const [selectedChat, setSelectedChat] = useState(null);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [selectedManager, setSelectedManager] = useState('');
 
-  // Navigation State
   // 'selection' | 'chats' | 'evaluation'
   const [currentView, setCurrentView] = useState('selection');
 
-  // React Query hooks - replaces manual state management
   const { data: chats = [], isLoading: loadingChats, refetch: refetchChats } = useChats(client, dateFrom, dateTo);
-  const { data: messages = [], isLoading: loadingMessages, refetch: refetchMessages } = useMessages(client, selectedChat?.id);
+  const { data: messages = [], isLoading: loadingMessages } = useMessages(client, selectedChat?.id);
   const { data: managers = [] } = useManagers(client, chats);
 
   const handleLogin = (endpoint, token) => {
-    // Basic validation/cleaning
-    const baseUrl = endpoint.replace(/\/$/, ''); // Remove trailing slash
-    setCredentials({ baseUrl, token });
+    const baseUrl = endpoint.replace(/\/$/, '');
+    const nextCredentials = { baseUrl, token };
+
+    setCredentials(nextCredentials);
     setClient(createClient(baseUrl, token));
 
-    // Save to localStorage
     localStorage.setItem('simla_endpoint', baseUrl);
     localStorage.setItem('simla_token', token);
   };
-
-  /* Auto-login on mount */
-  useEffect(() => {
-    // Priority 1: Environment variables
-    const envEndpoint = import.meta.env.VITE_ENDPOINT_URL;
-    const envToken = import.meta.env.VITE_TOKEN;
-
-    if (envEndpoint && envToken) {
-      const baseUrl = envEndpoint.replace(/\/$/, '');
-      setCredentials({ baseUrl, token: envToken });
-      setClient(createClient(baseUrl, envToken));
-      console.log('‚úÖ Auto-login using environment variables');
-      return;
-    }
-
-    // Priority 2: localStorage (fallback)
-    const savedEndpoint = localStorage.getItem('simla_endpoint');
-    const savedToken = localStorage.getItem('simla_token');
-    if (savedEndpoint && savedToken) {
-      const baseUrl = savedEndpoint.replace(/\/$/, '');
-      setCredentials({ baseUrl, token: savedToken });
-      setClient(createClient(baseUrl, savedToken));
-      console.log('‚úÖ Auto-login using localStorage');
-    }
-  }, []);
-
-  // React Query handles data fetching automatically via hooks above
 
   const handleDateChange = (type, value) => {
     if (type === 'from') setDateFrom(value);
@@ -70,7 +67,6 @@ function App() {
 
   const handleSelectChat = (chat) => {
     setSelectedChat(chat);
-    // useMessages hook will automatically fetch messages when selectedChat changes
   };
 
   const handleBackToMenu = () => {
@@ -86,7 +82,6 @@ function App() {
     );
   }
 
-  // Render Selection Screen
   if (currentView === 'selection') {
     return (
       <ThemeProvider>
@@ -97,7 +92,6 @@ function App() {
     );
   }
 
-  // Render Chats View
   if (currentView === 'chats') {
     return (
       <ThemeProvider>
@@ -126,7 +120,6 @@ function App() {
     );
   }
 
-  // Render Evaluation View
   if (currentView === 'evaluation') {
     return (
       <ThemeProvider>
@@ -134,13 +127,19 @@ function App() {
           <div className="evaluation-layout" style={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
             <div className="evaluation-nav-header glass-effect" style={{ padding: '1rem', display: 'flex', alignItems: 'center', gap: '1rem', borderBottom: '1px solid var(--border-color)' }}>
               <button className="back-btn" onClick={handleBackToMenu}>
-                ‚Üê Volver al Men√∫
+                ? Volver al Men˙
               </button>
-              <h3 style={{ margin: 0, color: 'var(--text-primary)' }}>Evaluaci√≥n de Gestores</h3>
+              <h3 style={{ margin: 0, color: 'var(--text-primary)' }}>EvaluaciÛn de Gestores</h3>
             </div>
-            <EvaluationPanel
-              client={client}
-            />
+            <Suspense
+              fallback={
+                <div style={{ padding: '1.5rem', color: 'var(--text-secondary)' }}>
+                  Cargando mÛdulo de evaluaciÛn...
+                </div>
+              }
+            >
+              <EvaluationPanel client={client} />
+            </Suspense>
           </div>
         </div>
       </ThemeProvider>
