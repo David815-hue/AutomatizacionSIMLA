@@ -151,34 +151,43 @@ export async function exportEvaluationsToExcel(results, managerName = 'Gestor') 
     // --- DATOS ---
     let currentRow = 5;
 
-    // Estructura de criterios
+    // ── Estructura sincronizada con el prompt de Groq y EvaluationPanel.jsx ──
     const criteriaStructure = [
         {
-            section: 'Cumplimiento de scripts', max: 10, criteria: [
-                { name: 'Salida de forma adecuada, menciona nombre y solicita nombre del cliente.', max: 5 },
-                { name: 'Utiliza script de despedida completo (nombre, agradecimiento, tiempo de entrega/gestión).', max: 5 }
+            section: 'Cumplimiento de Scripts', max: 20,
+            criteria: [
+                { name: 'Saludo adecuado — menciona nombre del agente y solicita nombre del cliente', keys: ['scripts', 'saludo'], max: 10 },
+                { name: 'Despedida completa — nombre, agradecimiento y tiempo de entrega/gestión', keys: ['scripts', 'despedida'], max: 10 },
             ]
         },
         {
-            section: 'Cumplimiento de protocolo', max: 50, criteria: [
-                { name: 'Personaliza la interacción llamando al cliente por su nombre.', max: 4 },
-                { name: 'Maneja tiempos de espera de forma correcta (llamada/Chat).', max: 4 },
-                { name: 'Excederse del tiempo de espera', max: 6 },
-                { name: 'Valida y registra datos completos en el sistema.', max: 4 },
-                { name: 'Toma de pedido / gestión de solicitud de forma clara.', max: 8 },
-                { name: 'Realiza ofrecimientos adicionales y promoción vigente.', max: 7 },
-                { name: 'Confirma la orden/gestión y detalla precios, dirección y forma de pago.', max: 6 },
+            section: 'Cumplimiento de Protocolo', max: 60,
+            criteria: [
+                { name: 'Personaliza llamando al cliente por su nombre', keys: ['protocolo', 'personaliza'], max: 5 },
+                { name: 'Tiempos de respuesta adecuados (máx. 1 min entre mensajes)', keys: ['protocolo', 'tiempos_respuesta'], max: 5 },
+                { name: 'No excede tiempo de espera sin avisar al cliente', keys: ['protocolo', 'tiempo_espera'], max: 7 },
+                { name: 'Valida y confirma datos: teléfono, dirección, referencias', keys: ['protocolo', 'valida_datos'], max: 5 },
+                { name: 'Toma de pedido / gestión de solicitud de forma clara y correcta', keys: ['protocolo', 'toma_pedido'], max: 9 },
+                { name: 'Ofrece productos adicionales y promociones vigentes', keys: ['protocolo', 'ofrece_adicionales'], max: 8 },
+                { name: 'Confirma orden con precios, totales y costos de envío', keys: ['protocolo', 'confirma_orden'], max: 7 },
+                { name: 'Ofrece link de pago como primera opción', keys: ['protocolo', 'link_pago'], max: 7 },
+                { name: 'Pregunta si necesita ayuda adicional antes de cerrar', keys: ['protocolo', 'ayuda_adicional'], max: 4 },
+                { name: 'Evita silencios prolongados (más de 3 min sin respuesta)', keys: ['protocolo', 'sin_silencios'], max: 3 },
             ]
         },
         {
-            section: 'Calidad', max: 10, criteria: [
-                { name: 'Empatía, cortesía y orientación a soluciones', max: 10 }
+            section: 'Calidad de la Atención', max: 10,
+            criteria: [
+                { name: 'Demuestra dominio y seguridad en el producto/servicio', keys: ['calidad', 'dominio_seguridad'], max: 3 },
+                { name: 'Redacción clara, sin faltas de ortografía', keys: ['calidad', 'redaccion_clara'], max: 3 },
+                { name: 'Empatía, cortesía y orientación a soluciones', keys: ['calidad', 'empatia_cortesia'], max: 4 },
             ]
         },
         {
-            section: 'Registro', max: 10, criteria: [
-                { name: 'Confirmó datos del cliente en el chat', max: 5 },
-                { name: 'Colocó etiquetas al diálogo', max: 5 }
+            section: 'Cumplimiento de Registro', max: 10,
+            criteria: [
+                { name: 'Confirmó datos del cliente en el chat (nombre, teléfono, dirección)', keys: ['registro', 'confirma_datos'], max: 5 },
+                { name: 'Colocó etiquetas al diálogo (verificación manual del supervisor)', keys: ['registro', 'etiquetas'], max: 5 },
             ]
         }
     ];
@@ -204,7 +213,7 @@ export async function exportEvaluationsToExcel(results, managerName = 'Gestor') 
         results.forEach((result, idx) => {
             let sectionTotal = 0;
             section.criteria.forEach(crit => {
-                sectionTotal += getScoreForCriterion(result, crit.name);
+                sectionTotal += getScoreForCriterion(result, crit.keys);
             });
 
             const cell = worksheet.getCell(currentRow, 3 + idx);
@@ -231,13 +240,23 @@ export async function exportEvaluationsToExcel(results, managerName = 'Gestor') 
             maxCell.alignment = { vertical: 'middle', horizontal: 'center' };
             maxCell.border = borders;
 
-            // Puntajes
+            // Puntajes por muestra
             results.forEach((result, idx) => {
-                const score = getScoreForCriterion(result, crit.name);
+                const score = getScoreForCriterion(result, crit.keys);
                 const cell = worksheet.getCell(currentRow, 3 + idx);
-                cell.value = score.toFixed(2);
+                cell.value = score !== null ? Number(score.toFixed(2)) : 'N/E';
                 cell.alignment = { vertical: 'middle', horizontal: 'center' };
                 cell.border = borders;
+
+                // Color según rendimiento
+                const pct = score !== null ? (score / crit.max) * 100 : null;
+                if (pct !== null) {
+                    cell.fill = {
+                        type: 'pattern', pattern: 'solid',
+                        fgColor: { argb: pct >= 90 ? 'FF22c55e' : pct >= 70 ? 'FFf59e0b' : 'FFef4444' }
+                    };
+                    cell.font = { ...fontWhiteBold, size: 10 };
+                }
             });
             currentRow++;
         });
@@ -259,9 +278,9 @@ export async function exportEvaluationsToExcel(results, managerName = 'Gestor') 
     totalMaxCell.border = borders;
 
     results.forEach((result, idx) => {
-        const total = result.evaluation?.total || 0;
+        const total = result.evaluation?.promedio_final ?? result.evaluation?.total ?? 0;
         const cell = worksheet.getCell(currentRow, 3 + idx);
-        cell.value = total.toFixed(2);
+        cell.value = Number(total.toFixed(2));
         cell.fill = fillDarkBlue;
         cell.font = fontWhiteBold;
         cell.alignment = { vertical: 'middle', horizontal: 'center' };
@@ -269,8 +288,8 @@ export async function exportEvaluationsToExcel(results, managerName = 'Gestor') 
     });
 
     // Ajustes finales
-    worksheet.getColumn(1).width = 60; // Columna A ancha
-    worksheet.getColumn(2).width = 12; // KPI
+    worksheet.getColumn(1).width = 65;
+    worksheet.getColumn(2).width = 10;
 
     // Guardar
     const buffer = await workbook.xlsx.writeBuffer();
@@ -278,30 +297,23 @@ export async function exportEvaluationsToExcel(results, managerName = 'Gestor') 
     saveAs(new Blob([buffer]), fileName);
 }
 
-// Helper
-function getScoreForCriterion(result, criterionName) {
-    if (!result || !result.evaluation) return 0;
-    const eval_ = result.evaluation;
-
-    // Mapeo sincronizado con EvaluationPanel.jsx
-    if (criterionName.includes('Salida de forma adecuada')) return eval_.scripts?.saludo || 0;
-    if (criterionName.includes('script de despedida')) return eval_.scripts?.despedida || 0;
-
-    // Protocolo
-    if (criterionName.includes('Personaliza')) return eval_.protocolo?.personaliza || 0;
-    if (criterionName.includes('Maneja tiempos de espera')) return eval_.protocolo?.tiempos_respuesta || 0; // "Maneja tiempos..." -> tiempos_respuesta
-    if (criterionName.includes('Excederse del tiempo')) return eval_.protocolo?.tiempo_espera || 0; // "Excederse..." -> tiempo_espera (según UI label "Espera")
-    if (criterionName.includes('Valida y registra')) return eval_.protocolo?.valida_datos || 0;
-    if (criterionName.includes('Toma de pedido')) return eval_.protocolo?.toma_pedido || 0;
-    if (criterionName.includes('ofrecimientos adicionales')) return eval_.protocolo?.ofrece_adicionales || 0;
-    if (criterionName.includes('Confirma la orden')) return eval_.protocolo?.confirma_orden || 0;
-
-    // Calidad
-    if (criterionName.includes('Empatía')) return eval_.calidad?.empatia_cortesia || 0;
-
-    // Registro
-    if (criterionName.includes('Confirmó datos')) return eval_.registro?.confirma_datos || 0;
-    if (criterionName.includes('etiquetas')) return eval_.registro?.etiquetas || 0;
-
-    return 0;
+/**
+ * Extrae el score de un criterio soportando formato viejo (número) y nuevo ({score, msg_indices})
+ * @param {Object} result - Resultado de evaluación
+ * @param {string[]} keys - [sección, campo] ej: ['scripts', 'saludo']
+ */
+function getScoreForCriterion(result, keys) {
+    if (!result?.evaluation) return 0;
+    const section = result.evaluation[keys[0]];
+    if (!section) return 0;
+    const field = section[keys[1]];
+    if (field === null || field === undefined) return 0;
+    // Nuevo formato: { score, msg_indices }
+    if (typeof field === 'object' && 'score' in field) {
+        return field.score ?? 0;
+    }
+    // Formato antiguo: número directo
+    return typeof field === 'number' ? field : 0;
 }
+
+

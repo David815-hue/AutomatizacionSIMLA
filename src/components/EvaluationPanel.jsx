@@ -380,6 +380,13 @@ const EvaluationPanel = ({ client }) => {
     const [expandedChat, setExpandedChat] = useState(null);
     const [modalChat, setModalChat] = useState(null);
     const [modalSearch, setModalSearch] = useState('');
+    const [supervisorNotes, setSupervisorNotes] = useState(() => {
+        try { return JSON.parse(localStorage.getItem('simla_supervisor_notes') || '{}'); }
+        catch { return {}; }
+    });
+    const [noteSaved, setNoteSaved] = useState(false);
+    const [showModalDetails, setShowModalDetails] = useState(false);
+
 
     // Ref to track fetch requests and avoid race conditions
     const fetchIdRef = useRef(0);
@@ -1348,13 +1355,15 @@ const EvaluationPanel = ({ client }) => {
                     )}
 
                     <div className="control-section" style={{ marginTop: 'auto' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
-                            <span style={{ fontSize: '0.85rem' }}>Solo Cerrados</span>
-                            <label className="switch">
-                                <input type="checkbox" checked={onlyClosedDialogs} onChange={(e) => setOnlyClosedDialogs(e.target.checked)} />
-                                <span className="slider round"></span>
-                            </label>
-                        </div>
+                        {!useMultipleIds && (
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+                                <span style={{ fontSize: '0.85rem' }}>Solo Cerrados</span>
+                                <label className="switch">
+                                    <input type="checkbox" checked={onlyClosedDialogs} onChange={(e) => setOnlyClosedDialogs(e.target.checked)} />
+                                    <span className="slider round"></span>
+                                </label>
+                            </div>
+                        )}
 
                         <button
                             onClick={handleEvaluate}
@@ -1702,37 +1711,101 @@ const EvaluationPanel = ({ client }) => {
                                     );
                                 })()}
 
-                                {/* Observations */}
-                                {modalChat.evaluation?.observaciones && (
-                                    <div style={{
-                                        marginBottom: '0.75rem', padding: '0.5rem 0.8rem',
-                                        background: 'rgba(255,193,7,0.07)', border: '1px solid rgba(255,193,7,0.22)',
-                                        borderRadius: '10px', fontSize: '0.81rem', color: 'var(--text-secondary)',
-                                        fontStyle: 'italic', display: 'flex', gap: '0.5rem', alignItems: 'flex-start'
-                                    }}>
-                                        <span style={{ flexShrink: 0 }}>💡</span>
-                                        <span>{modalChat.evaluation.observaciones}</span>
-                                    </div>
-                                )}
-
-                                {/* ── SEARCH BAR ── */}
-                                <div style={{ position: 'relative' }}>
-                                    <Search size={14} style={{
-                                        position: 'absolute', left: '0.75rem', top: '50%',
-                                        transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none'
-                                    }} />
-                                    <input
-                                        type="text"
-                                        placeholder="Buscar mensajes..."
-                                        value={modalSearch}
-                                        onChange={e => setModalSearch(e.target.value)}
-                                        className="form-input"
-                                        style={{ width: '100%', paddingLeft: '2.2rem', fontSize: '0.85rem', padding: '0.45rem 0.75rem 0.45rem 2.2rem' }}
-                                    />
-                                </div>
+                                {/* ── ACCORDION TOGGLE ── */}
+                                <button
+                                    onClick={() => setShowModalDetails(v => !v)}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: '0.4rem',
+                                        background: 'none', border: 'none', cursor: 'pointer',
+                                        color: 'var(--text-muted)', fontSize: '0.78rem',
+                                        padding: '0.3rem 0', marginTop: '0.4rem',
+                                        width: '100%', justifyContent: 'center',
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.color = 'var(--coral)'}
+                                    onMouseLeave={e => e.currentTarget.style.color = 'var(--text-muted)'}
+                                >
+                                    {showModalDetails
+                                        ? <><span>▲</span>&#8194;Ocultar detalles</>
+                                        : <><span>▼</span>&#8194;Ver detalles del chat</>
+                                    }
+                                </button>
                             </div>
 
-                            {/* ── MODAL BODY: smart bubble groups from AI msg_indices ── */}
+                            {/* ── ACCORDION CONTENT ── */}
+                            {showModalDetails && (
+                                <div style={{ borderTop: '1px solid var(--border-color)' }}>
+
+                                    {/* Observations */}
+                                    {modalChat.evaluation?.observaciones && (
+                                        <div style={{
+                                            margin: '0.75rem 1.5rem 0', padding: '0.5rem 0.8rem',
+                                            background: 'rgba(255,193,7,0.07)', border: '1px solid rgba(255,193,7,0.22)',
+                                            borderRadius: '10px', fontSize: '0.81rem', color: 'var(--text-secondary)',
+                                            fontStyle: 'italic', display: 'flex', gap: '0.5rem', alignItems: 'flex-start'
+                                        }}>
+                                            <span style={{ flexShrink: 0 }}>💡</span>
+                                            <span>{modalChat.evaluation.observaciones}</span>
+                                        </div>
+                                    )}
+
+                                    {/* Search Bar */}
+                                    <div style={{ position: 'relative', padding: '0.75rem 1.5rem 0' }}>
+                                        <Search size={14} style={{
+                                            position: 'absolute', left: 'calc(1.5rem + 0.75rem)', top: '50%',
+                                            transform: 'translateY(-25%)', color: 'var(--text-muted)', pointerEvents: 'none'
+                                        }} />
+                                        <input
+                                            type="text"
+                                            placeholder="Buscar mensajes..."
+                                            value={modalSearch}
+                                            onChange={e => setModalSearch(e.target.value)}
+                                            className="form-input"
+                                            style={{ width: '100%', paddingLeft: '2.2rem', fontSize: '0.85rem', padding: '0.45rem 0.75rem 0.45rem 2.2rem' }}
+                                        />
+                                    </div>
+
+                                    {/* Supervisor Notes */}
+                                    {(() => {
+                                        const chatKey = modalChat?.chatId || modalChat?.id || 'unknown';
+                                        const currentNote = supervisorNotes[chatKey] || '';
+                                        const saveNote = (val) => {
+                                            const updated = { ...supervisorNotes, [chatKey]: val };
+                                            setSupervisorNotes(updated);
+                                            localStorage.setItem('simla_supervisor_notes', JSON.stringify(updated));
+                                            setNoteSaved(true);
+                                            setTimeout(() => setNoteSaved(false), 2000);
+                                        };
+                                        return (
+                                            <div style={{ padding: '0.75rem 1.5rem 0.75rem' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
+                                                    <span style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                                                        ✏️ Nota del Supervisor
+                                                    </span>
+                                                    {noteSaved && (
+                                                        <span style={{ fontSize: '0.7rem', color: '#22c55e', fontWeight: 600 }}>✓ Guardado</span>
+                                                    )}
+                                                </div>
+                                                <textarea
+                                                    defaultValue={currentNote}
+                                                    placeholder="Observaciones manuales... (se guarda al salir del campo)"
+                                                    onBlur={e => saveNote(e.target.value)}
+                                                    rows={2}
+                                                    style={{
+                                                        width: '100%', resize: 'vertical', minHeight: '54px',
+                                                        background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+                                                        borderRadius: '8px', padding: '0.4rem 0.65rem',
+                                                        color: 'var(--text-primary)', fontSize: '0.8rem',
+                                                        lineHeight: 1.5, outline: 'none', boxSizing: 'border-box',
+                                                        fontFamily: 'inherit',
+                                                    }}
+                                                />
+                                            </div>
+                                        );
+                                    })()}
+
+                                </div>
+                            )}
+
                             <div className="modal-body" style={{ flex: 1, overflowY: 'auto', padding: '1.25rem 1.5rem' }}>
                                 {(() => {
                                     if (!modalChat.messages) return null;
@@ -1803,18 +1876,27 @@ const EvaluationPanel = ({ client }) => {
                                         groupBounds[g.groupId] = { first: g.indices[0], last: g.indices[g.indices.length - 1], color: g.color };
                                     });
 
-                                    // Which groups have a badge shown at the last index of the group
-                                    // badgeMap: lastIdx → list of groups ending here
+
+                                    // Which groups have a badge shown at the last AGENT message of the group
+                                    // badgeMap: lastAgentIdx → list of groups
                                     const badgeMap = {};
                                     groupRanges.forEach(g => {
-                                        const last = g.indices[g.indices.length - 1];
-                                        if (!badgeMap[last]) badgeMap[last] = [];
-                                        badgeMap[last].push(g);
+                                        const sortedGroupIdx = [...g.indices].sort((a, b) => a - b);
+                                        const lastAgentIdx = [...sortedGroupIdx].reverse().find(i => {
+                                            const m = sorted[i];
+                                            return m && m.from?.type !== 'customer';
+                                        });
+                                        if (lastAgentIdx === undefined) return;
+                                        if (!badgeMap[lastAgentIdx]) badgeMap[lastAgentIdx] = [];
+                                        badgeMap[lastAgentIdx].push(g);
                                     });
 
-                                    // Which groups are "active" (bracket line visible) at a given msgIdx
-                                    const getActiveGroups = (idx) =>
-                                        groupRanges.filter(g => idx >= g.indices[0] && idx <= g.indices[g.indices.length - 1] && g.indices.length > 1);
+                                    // Bracket only on AGENT messages
+                                    const getActiveGroups = (idx) => {
+                                        const m = sorted[idx];
+                                        if (!m || m.from?.type === 'customer') return [];
+                                        return groupRanges.filter(g => idx >= g.indices[0] && idx <= g.indices[g.indices.length - 1] && g.indices.length > 1);
+                                    };
 
                                     const elements = [];
                                     sorted.forEach((msg, realIdx) => {
@@ -1897,27 +1979,44 @@ const EvaluationPanel = ({ client }) => {
                                                             outline: activeGroups.length > 0 && !isFromCustomer ? `1px solid ${bracketColor}33` : 'none',
                                                             borderRadius: '10px',
                                                         }}>
-                                                            {imageUrl && (
-                                                                <div style={{ marginBottom: textContent ? '0.4rem' : 0 }}>
-                                                                    <a href={imageUrl} target="_blank" rel="noopener noreferrer">
-                                                                        <img
-                                                                            src={imageUrl}
-                                                                            alt="Imagen adjunta"
-                                                                            style={{
-                                                                                maxWidth: '100%', maxHeight: '200px', borderRadius: '10px',
-                                                                                cursor: 'zoom-in', display: 'block',
-                                                                                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                                                                                border: '1px solid var(--border-color)'
-                                                                            }}
-                                                                            onError={e => { e.target.style.display = 'none'; }}
-                                                                        />
-                                                                    </a>
-                                                                    <div style={{ fontSize: '0.68rem', opacity: 0.5, fontStyle: 'italic', marginTop: '0.2rem' }}>💡 Analizada con OCR</div>
-                                                                </div>
-                                                            )}
-                                                            {textContent && <span>{highlightText(textContent)}</span>}
-                                                            {!textContent && !imageUrl && <span style={{ opacity: 0.4, fontStyle: 'italic' }}>[Media]</span>}
+                                                            {(() => {
+                                                                const imageUrl = getImageUrlFromMessage(msg);
+                                                                const textContent = msg.content || '';
+                                                                if (imageUrl) return (
+                                                                    <>
+                                                                        <div style={{ marginBottom: textContent ? '0.4rem' : 0 }}>
+                                                                            <a href={imageUrl} target="_blank" rel="noopener noreferrer">
+                                                                                <img src={imageUrl} alt="Imagen adjunta"
+                                                                                    style={{ maxWidth: '100%', maxHeight: '200px', borderRadius: '10px', cursor: 'zoom-in', display: 'block', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', border: '1px solid var(--border-color)' }}
+                                                                                    onError={e => { e.target.style.display = 'none'; }}
+                                                                                />
+                                                                            </a>
+                                                                            <div style={{ fontSize: '0.68rem', opacity: 0.5, fontStyle: 'italic', marginTop: '0.2rem' }}>💡 Analizada con OCR</div>
+                                                                        </div>
+                                                                        {textContent && <span>{highlightText(textContent)}</span>}
+                                                                    </>
+                                                                );
+                                                                if (msg.type === 'file') {
+                                                                    const items = msg.items || [];
+                                                                    return (
+                                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem' }}>
+                                                                            {items.length > 0 ? items.map((item, i) => (
+                                                                                <a key={i} href={item.url} target="_blank" rel="noopener noreferrer"
+                                                                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', color: 'inherit', textDecoration: 'underline', fontSize: '0.82rem' }}>
+                                                                                    📎 {item.caption || item.filename || 'Archivo adjunto'}
+                                                                                </a>
+                                                                            )) : <span style={{ opacity: 0.6 }}>📎 Archivo adjunto</span>}
+                                                                            {textContent && <span style={{ marginTop: '0.2rem' }}>{highlightText(textContent)}</span>}
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                if (msg.type === 'product') return <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>🛒 {msg.product?.name || textContent || 'Producto'}</span>;
+                                                                if (msg.type === 'order') return <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>🚚 Pedido #{msg.order?.number || msg.order?.id || 'N/A'}</span>;
+                                                                if (textContent) return <span>{highlightText(textContent)}</span>;
+                                                                return <span style={{ opacity: 0.4, fontStyle: 'italic' }}>[sin contenido]</span>;
+                                                            })()}
                                                         </div>
+
                                                         <div className="message-meta" style={{ fontSize: '0.62rem', opacity: 0.45, marginTop: '0.2rem', textAlign: isFromCustomer ? 'left' : 'right' }}>
                                                             {timeStr}
                                                         </div>
@@ -1997,10 +2096,10 @@ const EvaluationPanel = ({ client }) => {
                                 })()}
                             </div>
                         </motion.div>
-                    </motion.div>
+                    </motion.div >
                 )}
-            </AnimatePresence>
-        </motion.div>
+            </AnimatePresence >
+        </motion.div >
     );
 };
 
