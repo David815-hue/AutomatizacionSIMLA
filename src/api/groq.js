@@ -38,35 +38,40 @@ INSTRUCCIONES:
 - Sé objetivo y consistente
 - Los valores null indican que el criterio requiere validación manual del supervisor
 
+IMPORTANTE - ÍNDICES DE MENSAJES:
+Cada mensaje del chat tiene un índice numérico [MSG-N] donde N empieza en 0.
+Debes indicar exactamente qué mensajes evaluaste para cada criterio usando el campo "msg_indices" (array de números enteros).
+Si un criterio se evalúa en base a todo el chat, usa [] como array vacío.
+
 RESPONDE EN FORMATO JSON EXACTO (usa null cuando no hay evidencia):
 {
   "scripts": {
-    "saludo": <0-10 o null>,
-    "despedida": <0-10 o null>,
+    "saludo": {"score": <0-10 o null>, "msg_indices": [<índices de los mensajes evaluados>]},
+    "despedida": {"score": <0-10 o null>, "msg_indices": [<índices>]},
     "total": <0-20 o null>
   },
   "protocolo": {
-    "personaliza": <0-5 o null>,
-    "tiempos_respuesta": <0-5 o null>,
-    "tiempo_espera": <0-7 o null>,
-    "valida_datos": <0-5 o null>,
-    "toma_pedido": <0-9 o null>,
-    "ofrece_adicionales": <0-8 o null>,
-    "confirma_orden": <0-7 o null>,
-    "link_pago": <0-7 o null>,
-    "ayuda_adicional": <0-4 o null>,
-    "sin_silencios": <0-3 o null>,
+    "personaliza": {"score": <0-5 o null>, "msg_indices": [<índices>]},
+    "tiempos_respuesta": {"score": <0-5 o null>, "msg_indices": []},
+    "tiempo_espera": {"score": <0-7 o null>, "msg_indices": []},
+    "valida_datos": {"score": <0-5 o null>, "msg_indices": [<índices>]},
+    "toma_pedido": {"score": <0-9 o null>, "msg_indices": [<índices>]},
+    "ofrece_adicionales": {"score": <0-8 o null>, "msg_indices": [<índices>]},
+    "confirma_orden": {"score": <0-7 o null>, "msg_indices": [<índices>]},
+    "link_pago": {"score": <0-7 o null>, "msg_indices": [<índices>]},
+    "ayuda_adicional": {"score": <0-4 o null>, "msg_indices": [<índices>]},
+    "sin_silencios": {"score": <0-3 o null>, "msg_indices": []},
     "total": <0-60 o null>
   },
   "calidad": {
-    "dominio_seguridad": <0-3 o null>,
-    "redaccion_clara": <0-3 o null>,
-    "empatia_cortesia": <0-4 o null>,
+    "dominio_seguridad": {"score": <0-3 o null>, "msg_indices": [<índices>]},
+    "redaccion_clara": {"score": <0-3 o null>, "msg_indices": [<índices>]},
+    "empatia_cortesia": {"score": <0-4 o null>, "msg_indices": [<índices>]},
     "total": <0-10 o null>
   },
   "registro": {
-    "confirma_datos": <0-5 o null>,
-    "etiquetas": <0-5>,
+    "confirma_datos": {"score": <0-5 o null>, "msg_indices": [<índices>]},
+    "etiquetas": {"score": 0, "msg_indices": []},
     "total": <0-10 o null>
   },
   "promedio_final": <suma de totales, excluyendo valores null>,
@@ -97,40 +102,45 @@ export const evaluateChat = async (chatMessages, agentName, dialogTags = []) => 
     const transcriptPromises = chatMessages.map(async (msg, index) => {
         const sender = msg.from?.type === 'user' ? agentName : 'Cliente';
         const time = new Date(msg.created_at).toLocaleTimeString();
+        const msgPrefix = `[MSG-${index}] [${time}] ${sender}`;
 
         // Check if message has an image
         const imageUrl = getImageUrlFromMessage(msg);
+        const isAgent = msg.from?.type === 'user' || msg.from?.type === 'bot';
 
         if (imageUrl) {
-            console.log(`📸 [OCR Debug] Mensaje #${index + 1}: Imagen detectada!`);
-            console.log(`   └─ URL: ${imageUrl}`);
-            console.log(`   └─ Tiene texto también: ${msg.content ? 'Sí' : 'No'}`);
+            console.log(`📸 [OCR Debug] Mensaje #${index + 1}: Imagen detectada! (${isAgent ? 'Agente' : 'Cliente'})`);
         }
 
+        // ─── Imagen del CLIENTE: no hacer OCR, no es relevante para evaluar al gestor ───
+        if (imageUrl && !isAgent) {
+            return `${msgPrefix}: [Imagen del cliente]`;
+        }
+
+        // ─── Imagen del AGENTE: sí hacer OCR ───
         if (imageUrl && !msg.content) {
             // Message has image but no text - extract text from image
-            console.log('📸 [Evaluación] Imagen detectada en mensaje, extrayendo texto...');
+            console.log('📸 [Evaluación] Imagen del agente detectada, extrayendo texto...');
             const extractedText = await extractTextFromImage(imageUrl, true);
 
             if (extractedText && extractedText.trim().length > 0) {
-                console.log(`✅ [OCR Debug] Texto extraído exitosamente: "${extractedText.substring(0, 100)}..."`);
-                return `[${time}] ${sender}: [Imagen con texto: "${extractedText}"]`;
+                console.log(`✅ [OCR Debug] Texto extraído: "${extractedText.substring(0, 100)}..."`);
+                return `${msgPrefix}: [Imagen con texto: "${extractedText}"]`;
             } else {
                 console.log('⚠️ [OCR Debug] No se pudo extraer texto de la imagen');
-                return `[${time}] ${sender}: [Imagen sin texto legible]`;
+                return `${msgPrefix}: [Imagen sin texto legible]`;
             }
         } else if (imageUrl && msg.content) {
             // Message has both image and text
             const extractedText = await extractTextFromImage(imageUrl, true);
             if (extractedText && extractedText.trim().length > 0) {
-                console.log(`✅ [OCR Debug] Texto imagen extraído: "${extractedText.substring(0, 100)}..."`);
-                return `[${time}] ${sender}: ${msg.content} [Adjunto imagen: "${extractedText}"]`;
+                return `${msgPrefix}: ${msg.content} [Adjunto imagen: "${extractedText}"]`;
             } else {
-                return `[${time}] ${sender}: ${msg.content} [Adjunto imagen]`;
+                return `${msgPrefix}: ${msg.content} [Adjunto imagen]`;
             }
         } else {
             // Normal text message
-            return `[${time}] ${sender}: ${msg.content || '[media]'}`;
+            return `${msgPrefix}: ${msg.content || '[sin contenido]'}`;
         }
     });
 
@@ -160,7 +170,7 @@ export const evaluateChat = async (chatMessages, agentName, dialogTags = []) => 
                 }
             ],
             temperature: 0.1,
-            max_tokens: 1000,
+            max_tokens: 1800,
         }),
     });
 

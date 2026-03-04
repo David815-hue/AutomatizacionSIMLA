@@ -50,6 +50,15 @@ export async function extractTextFromImage(imageUrl, showProgress = true) {
 export function getImageUrlFromMessage(message) {
     // Intentar múltiples campos donde podría estar la imagen
 
+    // 0. Campo 'items' (Simla CRM — el más común para imágenes)
+    if (message.items && message.items.length > 0) {
+        const imgItem = message.items.find(it =>
+            it.preview_url || it.url || it.type === 'image'
+        );
+        if (imgItem?.preview_url) return imgItem.preview_url;
+        if (imgItem?.url) return imgItem.url;
+    }
+
     // 1. Campo 'media' (más probable según el usuario)
     if (message.media?.url) {
         return message.media.url;

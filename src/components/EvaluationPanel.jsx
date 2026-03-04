@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { BarChart3, Play, Loader, ChevronDown, ChevronUp, Eye, X, RefreshCw, Download, Calendar, ArrowRight, Check, AlertCircle, FileText, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { BarChart3, Play, Loader, ChevronDown, ChevronUp, Eye, X, RefreshCw, Download, Calendar, ArrowRight, Check, AlertCircle, FileText, AlertTriangle, Search, Award, TrendingUp, MessageSquare, Star } from 'lucide-react';
+import { getImageUrlFromMessage } from '../api/imageAnalysis';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { DateRange } from 'react-date-range';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -378,6 +379,7 @@ const EvaluationPanel = ({ client }) => {
     const [viewMode, setViewMode] = useState('table'); // 'table' | 'radar'
     const [expandedChat, setExpandedChat] = useState(null);
     const [modalChat, setModalChat] = useState(null);
+    const [modalSearch, setModalSearch] = useState('');
 
     // Ref to track fetch requests and avoid race conditions
     const fetchIdRef = useRef(0);
@@ -1613,42 +1615,386 @@ const EvaluationPanel = ({ client }) => {
                             animate={{ scale: 1, y: 0 }}
                             exit={{ scale: 0.9, y: 20 }}
                             onClick={(e) => e.stopPropagation()}
-                            style={{ width: '100%', maxWidth: '800px', height: '85vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)' }}
+                            style={{ width: '100%', maxWidth: '860px', height: '90vh', display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)', overflow: 'hidden' }}
                         >
-                            <div className="modal-header" style={{ padding: '1.5rem', borderBottom: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <h3>Chat #{modalChat.dialogId}</h3>
-                                <button className="btn-icon" onClick={() => setModalChat(null)}><X size={20} /></button>
-                            </div>
-                            <div className="modal-body" style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
-                                {modalChat.messages && [...modalChat.messages]
-                                    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-                                    .map((msg, idx) => {
-                                        const isFromCustomer = msg.from?.type === 'customer';
+                            {/* ── MODAL HEADER ── */}
+                            <div style={{
+                                padding: '1.25rem 1.5rem',
+                                borderBottom: '1px solid var(--border-color)',
+                                background: 'linear-gradient(135deg, rgba(255,107,107,0.08), rgba(168,85,247,0.08))',
+                                flexShrink: 0
+                            }}>
+                                {/* Title row */}
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                        <div style={{
+                                            width: 40, height: 40, borderRadius: '12px',
+                                            background: 'linear-gradient(135deg, var(--coral), var(--violet))',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
+                                        }}>
+                                            <MessageSquare size={20} color="#fff" />
+                                        </div>
+                                        <div>
+                                            <div style={{ fontWeight: 700, fontSize: '1.1rem' }}>Chat #{modalChat.dialogId}</div>
+                                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                                {modalChat.messages?.length || 0} mensajes
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button className="btn-icon" onClick={() => setModalChat(null)}>
+                                        <X size={20} />
+                                    </button>
+                                </div>
 
-                                        // Check for image
-                                        const hasImage = msg.media?.url || msg.file_url || msg.file?.url ||
-                                            (msg.attachments && msg.attachments.length > 0);
-
-                                        return (
-                                            <div key={idx} className={`message ${isFromCustomer ? 'received' : 'sent'}`} style={{ marginBottom: '1rem', maxWidth: '80%', marginLeft: isFromCustomer ? 0 : 'auto', marginRight: isFromCustomer ? 'auto' : 0 }}>
-                                                <div className="message-text">
-                                                    {msg.content || (hasImage ? '📷 Imagen' : '[Media]')}
-                                                    {hasImage && (
-                                                        <span style={{
-                                                            display: 'block',
-                                                            fontSize: '0.75rem',
-                                                            marginTop: '0.3rem',
-                                                            opacity: 0.7,
-                                                            fontStyle: 'italic'
+                                {/* ── SCORECARD ROW ── */}
+                                {modalChat.evaluation && (() => {
+                                    const ev = modalChat.evaluation;
+                                    const total = ev.promedio_final || 0;
+                                    const scoreColor = total >= 90 ? '#22c55e' : total >= 70 ? '#f59e0b' : '#ef4444';
+                                    const sections = [
+                                        { key: 'scripts', label: 'Scripts', max: 20, color: '#22c55e' },
+                                        { key: 'protocolo', label: 'Protocolo', max: 60, color: '#3b82f6' },
+                                        { key: 'calidad', label: 'Calidad', max: 10, color: '#a855f7' },
+                                        { key: 'registro', label: 'Registro', max: 10, color: '#f59e0b' },
+                                    ];
+                                    return (
+                                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'stretch', marginBottom: '0.75rem' }}>
+                                            {/* Big total badge */}
+                                            <div style={{
+                                                flexShrink: 0, width: 76, display: 'flex', flexDirection: 'column',
+                                                alignItems: 'center', justifyContent: 'center',
+                                                background: `${scoreColor}22`, border: `2px solid ${scoreColor}`,
+                                                borderRadius: '14px', padding: '0.5rem'
+                                            }}>
+                                                <Award size={15} style={{ color: scoreColor, marginBottom: 2 }} />
+                                                <div style={{ fontSize: '1.7rem', fontWeight: 900, color: scoreColor, lineHeight: 1 }}>{total}</div>
+                                                <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontWeight: 600 }}>/ 100</div>
+                                            </div>
+                                            {/* Category mini cards */}
+                                            <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem' }}>
+                                                {sections.map(s => {
+                                                    const val = ev[s.key]?.total;
+                                                    const pct = val !== null && val !== undefined ? Math.round((val / s.max) * 100) : null;
+                                                    const c = pct === null ? '#6b7280' : pct >= 90 ? '#22c55e' : pct >= 70 ? '#f59e0b' : '#ef4444';
+                                                    return (
+                                                        <div key={s.key} style={{
+                                                            background: 'rgba(0,0,0,0.15)', borderRadius: '10px',
+                                                            padding: '0.45rem 0.6rem', display: 'flex', flexDirection: 'column', gap: '0.3rem'
                                                         }}>
-                                                            💡 Esta imagen fue analizada con OCR
-                                                        </span>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: s.color, textTransform: 'uppercase' }}>{s.label}</span>
+                                                                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: c }}>
+                                                                    {val === null || val === undefined ? '?' : val}<span style={{ opacity: 0.5, fontWeight: 400 }}>/{s.max}</span>
+                                                                </span>
+                                                            </div>
+                                                            <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 99, overflow: 'hidden' }}>
+                                                                <div style={{
+                                                                    height: '100%', borderRadius: 99,
+                                                                    width: pct !== null ? `${pct}%` : '0%',
+                                                                    background: c, transition: 'width 0.6s ease'
+                                                                }} />
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* Observations */}
+                                {modalChat.evaluation?.observaciones && (
+                                    <div style={{
+                                        marginBottom: '0.75rem', padding: '0.5rem 0.8rem',
+                                        background: 'rgba(255,193,7,0.07)', border: '1px solid rgba(255,193,7,0.22)',
+                                        borderRadius: '10px', fontSize: '0.81rem', color: 'var(--text-secondary)',
+                                        fontStyle: 'italic', display: 'flex', gap: '0.5rem', alignItems: 'flex-start'
+                                    }}>
+                                        <span style={{ flexShrink: 0 }}>💡</span>
+                                        <span>{modalChat.evaluation.observaciones}</span>
+                                    </div>
+                                )}
+
+                                {/* ── SEARCH BAR ── */}
+                                <div style={{ position: 'relative' }}>
+                                    <Search size={14} style={{
+                                        position: 'absolute', left: '0.75rem', top: '50%',
+                                        transform: 'translateY(-50%)', color: 'var(--text-muted)', pointerEvents: 'none'
+                                    }} />
+                                    <input
+                                        type="text"
+                                        placeholder="Buscar mensajes..."
+                                        value={modalSearch}
+                                        onChange={e => setModalSearch(e.target.value)}
+                                        className="form-input"
+                                        style={{ width: '100%', paddingLeft: '2.2rem', fontSize: '0.85rem', padding: '0.45rem 0.75rem 0.45rem 2.2rem' }}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* ── MODAL BODY: smart bubble groups from AI msg_indices ── */}
+                            <div className="modal-body" style={{ flex: 1, overflowY: 'auto', padding: '1.25rem 1.5rem' }}>
+                                {(() => {
+                                    if (!modalChat.messages) return null;
+                                    const ev = modalChat.evaluation;
+                                    const sorted = [...modalChat.messages].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+                                    const searchTerm = modalSearch.toLowerCase().trim();
+
+                                    if (sorted.length === 0) return (
+                                        <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', opacity: 0.5 }}>
+                                            Sin mensajes registrados
+                                        </div>
+                                    );
+
+                                    // ── Build criterion groups from AI msg_indices ──
+                                    // Each entry: { label, icon, score, max, indices: Set, color }
+                                    const CRITERIA = [
+                                        { key: ['scripts', 'saludo'], label: 'Saludo', icon: '👋', max: 10 },
+                                        { key: ['scripts', 'despedida'], label: 'Despedida', icon: '🤝', max: 10 },
+                                        { key: ['protocolo', 'personaliza'], label: 'Personaliza', icon: '🎯', max: 5 },
+                                        { key: ['protocolo', 'toma_pedido'], label: 'Toma de Pedido', icon: '📋', max: 9 },
+                                        { key: ['protocolo', 'valida_datos'], label: 'Valida Datos', icon: '📌', max: 5 },
+                                        { key: ['protocolo', 'ofrece_adicionales'], label: 'Adicionales', icon: '🛍️', max: 8 },
+                                        { key: ['protocolo', 'confirma_orden'], label: 'Confirma Orden', icon: '✅', max: 7 },
+                                        { key: ['protocolo', 'link_pago'], label: 'Link de Pago', icon: '💳', max: 7 },
+                                        { key: ['protocolo', 'ayuda_adicional'], label: 'Ayuda Final', icon: '🙋', max: 4 },
+                                        { key: ['calidad', 'empatia_cortesia'], label: 'Empatía', icon: '💬', max: 4 },
+                                        { key: ['registro', 'confirma_datos'], label: 'Confirma Datos', icon: '📝', max: 5 },
+                                    ];
+
+                                    // Helper: safely get criterion value (supports new {score, msg_indices} format AND old number format)
+                                    const getCriterion = (ev, keys) => {
+                                        if (!ev) return null;
+                                        const section = ev[keys[0]];
+                                        if (!section) return null;
+                                        const field = section[keys[1]];
+                                        if (field === null || field === undefined) return null;
+                                        if (typeof field === 'object') return field; // new format
+                                        return { score: field, msg_indices: [] }; // old format fallback
+                                    };
+
+                                    // Build a map: msgIndex → list of criteria that include it
+                                    const msgAnnotations = {}; // { [idx]: [{label, icon, score, max, color, groupId}] }
+                                    const groupRanges = []; // { groupId, indices: sorted array, label, icon, score, max, color }
+
+                                    CRITERIA.forEach((crit, gid) => {
+                                        const c = getCriterion(ev, crit.key);
+                                        if (!c) return;
+                                        const score = c.score;
+                                        const indices = Array.isArray(c.msg_indices) ? c.msg_indices : [];
+                                        const validIndices = indices.filter(i => i >= 0 && i < sorted.length);
+                                        const pct = score !== null && score !== undefined ? (score / crit.max) * 100 : null;
+                                        const color = pct === null ? '#6b7280' : pct >= 90 ? '#22c55e' : pct >= 70 ? '#f59e0b' : '#ef4444';
+
+                                        if (validIndices.length > 0) {
+                                            const sortedIdx = [...validIndices].sort((a, b) => a - b);
+                                            groupRanges.push({ groupId: gid, indices: sortedIdx, label: crit.label, icon: crit.icon, score, max: crit.max, color });
+                                            validIndices.forEach(i => {
+                                                if (!msgAnnotations[i]) msgAnnotations[i] = [];
+                                                msgAnnotations[i].push({ ...crit, score, color, groupId: gid });
+                                            });
+                                        }
+                                    });
+
+                                    // For each message index, figure out which groups it belongs to (for bracket line)
+                                    // groupId → { firstIdx, lastIdx }
+                                    const groupBounds = {};
+                                    groupRanges.forEach(g => {
+                                        groupBounds[g.groupId] = { first: g.indices[0], last: g.indices[g.indices.length - 1], color: g.color };
+                                    });
+
+                                    // Which groups have a badge shown at the last index of the group
+                                    // badgeMap: lastIdx → list of groups ending here
+                                    const badgeMap = {};
+                                    groupRanges.forEach(g => {
+                                        const last = g.indices[g.indices.length - 1];
+                                        if (!badgeMap[last]) badgeMap[last] = [];
+                                        badgeMap[last].push(g);
+                                    });
+
+                                    // Which groups are "active" (bracket line visible) at a given msgIdx
+                                    const getActiveGroups = (idx) =>
+                                        groupRanges.filter(g => idx >= g.indices[0] && idx <= g.indices[g.indices.length - 1] && g.indices.length > 1);
+
+                                    const elements = [];
+                                    sorted.forEach((msg, realIdx) => {
+                                        const isFromCustomer = msg.from?.type === 'customer';
+                                        const imageUrl = getImageUrlFromMessage(msg);
+                                        const textContent = msg.content || '';
+                                        const matchesSearch = !searchTerm || textContent.toLowerCase().includes(searchTerm);
+
+                                        const senderName = msg.from?.first_name
+                                            ? `${msg.from.first_name} ${msg.from.last_name || ''}`.trim()
+                                            : msg.from?.type === 'bot' ? '🤖 Bot'
+                                                : isFromCustomer ? '👤 Cliente' : '👨‍💼 Agente';
+
+                                        const timeStr = (() => {
+                                            try { return new Date(msg.created_at).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' }); }
+                                            catch { return ''; }
+                                        })();
+
+                                        const highlightText = (text) => {
+                                            if (!searchTerm || !text) return text;
+                                            const escaped = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                            const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
+                                            return parts.map((part, i) =>
+                                                part.toLowerCase() === searchTerm
+                                                    ? <mark key={i} style={{ background: 'rgba(251,191,36,0.45)', color: 'inherit', borderRadius: '3px', padding: '0 2px' }}>{part}</mark>
+                                                    : part
+                                            );
+                                        };
+
+                                        // Active groups for bracket display (groups with >1 message that include this idx)
+                                        const activeGroups = !searchTerm ? getActiveGroups(realIdx) : [];
+                                        // Groups whose badge appears AFTER this message (last index of the group)
+                                        const badgesHere = !searchTerm ? (badgeMap[realIdx] || []) : [];
+                                        // Single-message groups — badge shows directly under message (no bracket)
+                                        const singleBadgesHere = !searchTerm ? groupRanges.filter(g => g.indices.length === 1 && g.indices[0] === realIdx) : [];
+
+                                        // The left bracket color: use the first active group color (or the most "important" one)
+                                        const bracketColor = activeGroups.length > 0 ? activeGroups[0].color : null;
+                                        // Is this the FIRST message of a group (bracket cap start)?
+                                        const isGroupStart = activeGroups.some(g => g.indices[0] === realIdx);
+                                        // Is this the LAST message of a group (bracket cap end)?
+                                        const isGroupEnd = activeGroups.some(g => g.indices[g.indices.length - 1] === realIdx);
+
+                                        elements.push(
+                                            <div key={msg.id || realIdx} style={{
+                                                opacity: searchTerm && !matchesSearch ? 0.2 : 1,
+                                                transition: 'opacity 0.2s',
+                                                display: 'flex',
+                                                gap: '0.3rem',
+                                                marginBottom: '0.35rem',
+                                                flexDirection: isFromCustomer ? 'row' : 'row-reverse',
+                                                alignItems: 'stretch',
+                                            }}>
+                                                {/* Left/right bracket line for grouped messages */}
+                                                {!isFromCustomer && activeGroups.length > 0 && (
+                                                    <div style={{
+                                                        width: 3, flexShrink: 0,
+                                                        background: bracketColor,
+                                                        borderRadius: isGroupStart ? '3px 3px 0 0' : isGroupEnd ? '0 0 3px 3px' : '0',
+                                                        opacity: 0.6,
+                                                        marginTop: isGroupStart ? '0.5rem' : 0,
+                                                        marginBottom: isGroupEnd ? '0.5rem' : 0,
+                                                    }} />
+                                                )}
+
+                                                {/* Message bubble + single-msg badges */}
+                                                <div style={{
+                                                    flex: 1,
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    alignItems: isFromCustomer ? 'flex-start' : 'flex-end',
+                                                    marginLeft: isFromCustomer ? 0 : 'auto',
+                                                    marginRight: isFromCustomer ? 'auto' : 0,
+                                                }}>
+                                                    <div className={`message ${isFromCustomer ? 'received' : 'sent'}`} style={{ marginBottom: 0, maxWidth: '100%' }}>
+                                                        <div style={{ fontSize: '0.68rem', fontWeight: 700, marginBottom: '0.2rem', opacity: 0.7, color: isFromCustomer ? 'var(--text-muted)' : 'var(--coral)' }}>
+                                                            {senderName}
+                                                        </div>
+                                                        <div className="message-text" style={{
+                                                            outline: activeGroups.length > 0 && !isFromCustomer ? `1px solid ${bracketColor}33` : 'none',
+                                                            borderRadius: '10px',
+                                                        }}>
+                                                            {imageUrl && (
+                                                                <div style={{ marginBottom: textContent ? '0.4rem' : 0 }}>
+                                                                    <a href={imageUrl} target="_blank" rel="noopener noreferrer">
+                                                                        <img
+                                                                            src={imageUrl}
+                                                                            alt="Imagen adjunta"
+                                                                            style={{
+                                                                                maxWidth: '100%', maxHeight: '200px', borderRadius: '10px',
+                                                                                cursor: 'zoom-in', display: 'block',
+                                                                                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                                                                                border: '1px solid var(--border-color)'
+                                                                            }}
+                                                                            onError={e => { e.target.style.display = 'none'; }}
+                                                                        />
+                                                                    </a>
+                                                                    <div style={{ fontSize: '0.68rem', opacity: 0.5, fontStyle: 'italic', marginTop: '0.2rem' }}>💡 Analizada con OCR</div>
+                                                                </div>
+                                                            )}
+                                                            {textContent && <span>{highlightText(textContent)}</span>}
+                                                            {!textContent && !imageUrl && <span style={{ opacity: 0.4, fontStyle: 'italic' }}>[Media]</span>}
+                                                        </div>
+                                                        <div className="message-meta" style={{ fontSize: '0.62rem', opacity: 0.45, marginTop: '0.2rem', textAlign: isFromCustomer ? 'left' : 'right' }}>
+                                                            {timeStr}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Single-message badge (no bracket needed) */}
+                                                    {singleBadgesHere.length > 0 && (
+                                                        <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap', marginTop: '0.35rem', justifyContent: isFromCustomer ? 'flex-start' : 'flex-end' }}>
+                                                            {singleBadgesHere.map(b => {
+                                                                const pct = b.score !== null && b.score !== undefined ? (b.score / b.max) * 100 : null;
+                                                                const bColor = b.color;
+                                                                return (
+                                                                    <div key={b.groupId} style={{
+                                                                        display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+                                                                        background: `${bColor}18`, border: `1px solid ${bColor}66`,
+                                                                        borderRadius: '12px', padding: '0.18rem 0.55rem',
+                                                                        fontSize: '0.7rem', fontWeight: 700, color: bColor
+                                                                    }}>
+                                                                        <span>{b.icon}</span>
+                                                                        <span>{b.label}</span>
+                                                                        <span style={{ opacity: 0.7, fontWeight: 500 }}>{b.score ?? '?'}/{b.max}</span>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
                                                     )}
                                                 </div>
-                                                <div className="message-meta" style={{ fontSize: '0.7rem', opacity: 0.6, marginTop: '0.2rem' }}>{new Date(msg.created_at).toLocaleString()}</div>
+
+                                                {/* Mirror bracket for customer side (just spacing placeholder) */}
+                                                {isFromCustomer && activeGroups.length > 0 && (
+                                                    <div style={{ width: 3, flexShrink: 0 }} />
+                                                )}
                                             </div>
                                         );
-                                    })}
+
+                                        // After last message of a multi-message group: show the group badge
+                                        if (!searchTerm && badgesHere.filter(g => g.indices.length > 1).length > 0) {
+                                            const multiBadges = badgesHere.filter(g => g.indices.length > 1);
+                                            elements.push(
+                                                <div key={`badge-${realIdx}`} style={{
+                                                    display: 'flex', gap: '0.3rem', flexWrap: 'wrap',
+                                                    justifyContent: 'flex-end',
+                                                    marginBottom: '0.5rem', marginTop: '0.1rem',
+                                                    paddingRight: '0.15rem'
+                                                }}>
+                                                    {multiBadges.map(b => (
+                                                        <div key={b.groupId} style={{
+                                                            display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                                                            background: `${b.color}18`, border: `1px solid ${b.color}66`,
+                                                            borderRadius: '20px', padding: '0.25rem 0.7rem',
+                                                            fontSize: '0.72rem', fontWeight: 700, color: b.color,
+                                                            boxShadow: `0 2px 8px ${b.color}22`
+                                                        }}>
+                                                            <span>{b.icon}</span>
+                                                            <span>{b.label}</span>
+                                                            <span style={{ opacity: 0.75, fontWeight: 500 }}>
+                                                                {b.score ?? '?'}/{b.max}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            );
+                                        }
+                                    });
+
+                                    // Search empty state
+                                    if (searchTerm && !sorted.some(m => (m.content || '').toLowerCase().includes(searchTerm))) {
+                                        return (
+                                            <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', opacity: 0.6 }}>
+                                                <Search size={30} style={{ marginBottom: '0.5rem' }} />
+                                                <p>Sin resultados para "{modalSearch}"</p>
+                                            </div>
+                                        );
+                                    }
+
+                                    return elements;
+                                })()}
                             </div>
                         </motion.div>
                     </motion.div>
@@ -1659,3 +2005,5 @@ const EvaluationPanel = ({ client }) => {
 };
 
 export default EvaluationPanel;
+
+
